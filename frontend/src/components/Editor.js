@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 
-// Socket instance ko globally rakhein but connection management useEffect mein karein
 const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000', {
-  autoConnect: false, // Page load pe apne aap connect na ho
+  autoConnect: false,
 });
 
 function Editor() {
@@ -13,25 +12,36 @@ function Editor() {
   const navigate = useNavigate();
   const username = location.state?.username || localStorage.getItem('username') || 'Anonymous';
   const password = location.state?.password || '';
+  
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState([]);
   const [pinnedMessages, setPinnedMessages] = useState([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [rightTab, setRightSidebarTab] = useState('info'); // 'info', 'tasks', 'analytics'
+  const [rightTab, setRightSidebarTab] = useState('info');
   const [tasks, setTasks] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [typingUser, setTypingUser] = useState(null);
   const [showPollModal, setShowPollModal] = useState(false);
   const [suggestedReplies, setSuggestedReplies] = useState([]);
-  const [scheduledTime, setScheduledTime] = useState('');
   const [pollForm, setPollForm] = useState({ question: '', options: ['', ''] });
+  const [replyTo, setReplyTo] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [avatar, setAvatar] = useState('');
+  const [bio, setBio] = useState('');
+  const [toast, setToast] = useState(null);
+  
   const chatEndRef = useRef(null);
   const emojiPickerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const receivedMessageIds = useRef(new Set());
 
-  // Auto-scroll chat to bottom whenever a new message arrives
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat]);
@@ -39,15 +49,18 @@ function Editor() {
   useEffect(() => {
     const token = localStorage.getItem('token');
     
-    // If token or password (on refresh) is missing, redirect to Home
-    if (!token || !password) {
-      if (!token) alert("Please login first");
-      else alert("Room session expired. Please rejoin.");
+    if (!token) {
+      showToast('Please login first', 'error');
       navigate('/');
       return;
     }
 
-    // Sync token with socket instance before connecting
+    if (!password) {
+      showToast('Room session expired. Please rejoin.', 'error');
+      navigate('/');
+      return;
+    }
+
     socket.auth = { token };
     if (socket.io.opts) {
       socket.io.opts.auth = { token };
@@ -95,8 +108,29 @@ function Editor() {
     });
 
     socket.on('receive-message', (data) => {
+      if (receivedMessageIds.current.has(data.id)) {
+        return;
+      }
+      receivedMessageIds.current.add(data.id);
+      
       setChat((prev) => [...prev, data]);
       generateSmartReplies(data.text);
+      
+      setTimeout(() => {
+        receivedMessageIds.current.delete(data.id);
+      }, 5000);
+    });
+
+    socket.on('message-edited', ({ messageId, newText, editedAt }) => {
+      setChat(prev => prev.map(msg => 
+        msg.id === messageId ? { ...msg, text: newText, edited: true, editedAt } : msg
+      ));
+    });
+
+    socket.on('read-receipt', ({ messageId, readBy, readCount }) => {
+      setChat(prev => prev.map(msg => 
+        msg.id === messageId ? { ...msg, readBy, readCount } : msg
+      ));
     });
 
     socket.on('update-reactions', ({ messageId, reactions }) => {
@@ -116,42 +150,41 @@ function Editor() {
     });
 
     socket.on('pinned-history', (pinned) => {
+      console.log('📌 Pinned messages updated:', pinned);
       setPinnedMessages(pinned);
     });
 
     socket.on('kicked', () => {
-      alert('You have been kicked from the room by the owner.');
-      navigate('/');
+      showToast('You have been kicked from the room by the owner.', 'error');
+      setTimeout(() => navigate('/'), 1500);
     });
 
     socket.on('error', (err) => {
-      alert(err);
+      showToast(err, 'error');
       navigate('/');
     });
 
     socket.on('notification', (msg) => {
-      alert(msg);
+      showToast(msg, 'info');
     });
 
     socket.on('connect_error', (err) => {
       console.error("Connection Error:", err.message);
       if (err.message === "Authentication error" || err.message === "jwt expired") {
-        alert("Session expired. Please login again.");
+        showToast('Session expired. Please login again.', 'error');
         localStorage.clear();
         navigate('/');
       }
-      // Note: We don't alert for other errors to allow socket.io to auto-retry
     });
 
     return () => {
-      // Use a single line to remove all listeners for this room context
       socket.removeAllListeners();
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       socket.disconnect();
+      receivedMessageIds.current.clear();
     };
   }, [roomId, username, password, navigate]);
 
-  // Close emoji picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
@@ -163,6 +196,25 @@ function Editor() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [emojiPickerRef]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const messageId = entry.target.dataset.messageId;
+          if (messageId) {
+            socket.emit('message-read', { roomId, messageId });
+          }
+        }
+      });
+    }, { threshold: 0.5 });
+    
+    setTimeout(() => {
+      document.querySelectorAll('.message-item').forEach(el => observer.observe(el));
+    }, 500);
+    
+    return () => observer.disconnect();
+  }, [chat, roomId]);
 
   const handleTyping = (e) => {
     setMessage(e.target.value);
@@ -176,7 +228,7 @@ function Editor() {
 
   const handleEmojiSelect = (emoji) => {
     setMessage(prevMessage => prevMessage + emoji);
-    setShowEmojiPicker(false); // Close picker after selection
+    setShowEmojiPicker(false);
   };
 
   const generateSmartReplies = (text) => {
@@ -184,8 +236,10 @@ function Editor() {
     const t = text.toLowerCase();
     if (t.includes('meeting') || t.includes('call')) {
       setSuggestedReplies(['👍 I will join', 'Sorry, I am busy', 'What time?']);
-    } else if (t.includes('hello') || t.includes('hey')) {
+    } else if (t.includes('hello') || t.includes('hey') || t.includes('hi')) {
       setSuggestedReplies(['Hey there!', 'Hello!', 'How is it going?']);
+    } else if (t.includes('thanks') || t.includes('thank you')) {
+      setSuggestedReplies(['👍 You\'re welcome!', '😊 Anytime!', '🙏 Glad to help!']);
     } else {
       setSuggestedReplies(['Okay', 'Thanks!', 'Got it']);
     }
@@ -193,37 +247,52 @@ function Editor() {
 
   const sendMessage = (e, imageBase64 = null, pollData = null) => {
     if (e) e.preventDefault();
-    if (message.trim() || imageBase64 || pollData) {
-      if (scheduledTime) {
-        const msgData = {
-          username,
-          text: message,
-          scheduledTime,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-        socket.emit('schedule-message', { roomId, msgData });
-        alert("Message scheduled!");
-        setScheduledTime('');
-        setMessage('');
-        return;
-      }
-
-      const msgId = Date.now() + Math.random().toString(36).substr(2, 9);
-      const msgData = { 
-        id: msgId,
-        username, 
-        text: message, 
-        image: imageBase64,
-        isImportant: message.toLowerCase().includes('deadline') || message.includes('http'),
-        poll: pollData,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-      };
-      socket.emit('send-message', { roomId, ...msgData });
-      setChat((prev) => [...prev, msgData]);
+    
+    if (editingMessage && message.trim()) {
+      socket.emit('edit-message', { 
+        roomId, 
+        messageId: editingMessage.id, 
+        newText: message 
+      });
       setMessage('');
-      socket.emit('stop-typing', { roomId });
-      setSuggestedReplies([]);
+      setEditingMessage(null);
+      showToast('✏️ Message edited!', 'success');
+      return;
     }
+    
+    if (replyTo && message.trim()) {
+      socket.emit('reply-to-message', { 
+        roomId, 
+        messageId: replyTo.id, 
+        replyText: message,
+        username,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+      setMessage('');
+      setReplyTo(null);
+      return;
+    }
+    
+    if (!message.trim() && !imageBase64 && !pollData) {
+      showToast('Please type a message', 'error');
+      return;
+    }
+
+    const msgId = Date.now() + Math.random().toString(36).substr(2, 9);
+    const msgData = { 
+      id: msgId,
+      username, 
+      text: message, 
+      image: imageBase64,
+      poll: pollData,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    
+    socket.emit('send-message', { roomId, ...msgData });
+    
+    setMessage('');
+    socket.emit('stop-typing', { roomId });
+    setSuggestedReplies([]);
   };
 
   const addReaction = (messageId, emoji) => {
@@ -233,6 +302,10 @@ function Editor() {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('Image too large! Max 5MB', 'error');
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         sendMessage(e, reader.result);
@@ -241,7 +314,68 @@ function Editor() {
     }
   };
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 20 * 1024 * 1024) {
+        showToast('File too large! Max 20MB', 'error');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        socket.emit('share-file', {
+          roomId,
+          username,
+          fileName: file.name,
+          fileData: reader.result,
+          fileType: file.type,
+          fileSize: file.size,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+        showToast(`📎 ${file.name} uploaded!`, 'success');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        showToast('Image too large! Max 2MB', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatar(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const updateProfile = () => {
+    socket.emit('update-profile', { roomId, avatar, bio });
+    setShowProfileModal(false);
+    showToast('✅ Profile updated!', 'success');
+  };
+
+  const handleReply = (message) => {
+    setReplyTo(message);
+    document.getElementById('message-input')?.focus();
+  };
+
+  const handleEditMessage = (msg) => {
+    setEditingMessage(msg);
+    setMessage(msg.text);
+    document.getElementById('message-input')?.focus();
+  };
+
   const createPoll = () => {
+    if (!pollForm.question.trim() || pollForm.options.filter(o => o.trim()).length < 2) {
+      showToast('Please enter a question and at least 2 options', 'error');
+      return;
+    }
     const pollData = {
       question: pollForm.question,
       options: pollForm.options.filter(opt => opt.trim() !== '').map(opt => ({ text: opt, votes: 0 }))
@@ -249,6 +383,7 @@ function Editor() {
     sendMessage(null, null, pollData);
     setShowPollModal(false);
     setPollForm({ question: '', options: ['', ''] });
+    showToast('📊 Poll created!', 'success');
   };
 
   const updateTaskStatus = (taskId, newStatus) => {
@@ -260,36 +395,67 @@ function Editor() {
   };
 
   const pinMessage = (messageId) => {
+    console.log(`📌 Attempting to pin message: ${messageId}`);
+    console.log(`📌 Current user role: ${currentUser?.role}`);
+    console.log(`📌 Is staff: ${isStaff}`);
+    
+    if (!isStaff) {
+      showToast('❌ Only ADMIN or MANAGER can pin messages!', 'error');
+      return;
+    }
+    
+    const isAlreadyPinned = pinnedMessages.some(m => m.id === messageId);
+    if (isAlreadyPinned) {
+      showToast('ℹ️ Message already pinned!', 'info');
+      return;
+    }
+    
     socket.emit('pin-message', { roomId, messageId });
+    showToast('📌 Pinning message...', 'info');
+  };
+
+  const unpinMessage = (messageId) => {
+    if (!isStaff) {
+      showToast('❌ Only ADMIN or MANAGER can unpin!', 'error');
+      return;
+    }
+    socket.emit('unpin-message', { roomId, messageId });
+    showToast('📌 Unpinned!', 'success');
   };
 
   const deleteMessage = (messageId) => {
-    socket.emit('delete-message', { roomId, messageId });
+    if (window.confirm('Delete this message?')) {
+      socket.emit('delete-message', { roomId, messageId });
+    }
   };
 
   const kickUser = (userIdToKick) => {
-    socket.emit('kick-user', { roomId, userIdToKick });
+    if (window.confirm('Kick this user?')) {
+      socket.emit('kick-user', { roomId, userIdToKick });
+    }
   };
 
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
-    alert("Room ID copied to clipboard!");
+    showToast('📋 Room ID copied!', 'success');
   };
 
   const leaveRoom = () => {
-    navigate('/');
+    if (window.confirm('Are you sure you want to leave?')) {
+      navigate('/');
+    }
   };
 
   const renderMessageText = (text) => {
     if (!text) return "";
-    const parts = text.split(/(@\w+)/g);
+    const parts = text.split(/(@\w+|https?:\/\/[^\s]+)/g);
     return parts.map((part, index) => {
       if (part.startsWith('http')) {
-        return <a key={index} href={part} target="_blank" rel="noreferrer" className="text-blue-400 underline">{part}</a>;
+        return <a key={index} href={part} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>{part}</a>;
       }
       if (part.startsWith('@')) {
         return (
-          <span key={index} className="text-yellow-400 font-bold bg-yellow-400/10 px-1 rounded">
+          <span key={index} style={{ color: '#fbbf24', fontWeight: 'bold', background: 'rgba(251,191,36,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
             {part}
           </span>
         );
@@ -300,18 +466,20 @@ function Editor() {
   
   const getStatusColor = (status) => {
     switch(status) {
-      case 'away': return 'bg-amber-500';
-      case 'busy': return 'bg-rose-500';
-      default: return 'bg-emerald-500';
+      case 'away': return '#fbbf24';
+      case 'busy': return '#f43f5e';
+      default: return '#34d399';
     }
   };
 
-  const getAnalytics = () => {
-    const counts = chat.reduce((acc, msg) => {
-      if (msg.username) acc[msg.username] = (acc[msg.username] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const getFileIcon = (fileType) => {
+    if (!fileType) return '📎';
+    if (fileType.includes('pdf')) return '📄';
+    if (fileType.includes('word') || fileType.includes('doc')) return '📝';
+    if (fileType.includes('excel') || fileType.includes('sheet')) return '📊';
+    if (fileType.includes('zip') || fileType.includes('rar')) return '📦';
+    if (fileType.includes('ppt') || fileType.includes('presentation')) return '📑';
+    return '📎';
   };
 
   const emojis = ['😀', '😂', '😍', '👍', '🙏', '🔥', '🎉', '🚀', '💡', '💻', '✅', '❌', '❤️', '💔', '🤔', '🥳', '🤩', '😎', '💯', '✨'];
@@ -325,289 +493,885 @@ function Editor() {
   );
 
   return (
-    <div className="h-screen bg-[#0f172a] flex flex-col text-[#f1f5f9] font-sans">
-      {/* Top Navbar */}
-      <div className="bg-[#1e293b]/80 backdrop-blur-md border-b border-white/5 p-4 flex justify-between items-center z-20 shadow-xl">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold shadow-lg shadow-blue-500/20">#</div>
+    <div style={{
+      height: '100vh',
+      background: '#0a0f1e',
+      display: 'flex',
+      flexDirection: 'column',
+      color: '#f1f5f9',
+      fontFamily: 'Inter, sans-serif',
+      overflow: 'hidden'
+    }}>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999,
+          padding: '16px 24px',
+          borderRadius: '16px',
+          background: 'rgba(10,15,30,0.95)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          maxWidth: '400px',
+          animation: 'slideIn 0.4s ease-out',
+          borderLeft: `4px solid ${toast.type === 'success' ? '#34d399' : toast.type === 'error' ? '#f43f5e' : '#3b82f6'}`
+        }}>
+          <span style={{ color: 'white' }}>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Navbar */}
+      <div style={{
+        background: 'rgba(10,15,30,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        padding: '16px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 20,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.3)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 'bold',
+            fontSize: '18px',
+            boxShadow: '0 4px 20px rgba(59,130,246,0.2)'
+          }}>#</div>
           <div>
-            <h1 className="font-bold text-md tracking-tight">Private Room: {roomId}</h1>
-            <p className="text-[11px] text-[#8696a0]">{users.length} members online</p>
+            <div style={{
+              fontWeight: 700,
+              fontSize: '14px',
+              letterSpacing: '-0.025em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              Private Room: {roomId}
+              <span style={{
+                fontSize: '10px',
+                background: 'rgba(52,211,153,0.2)',
+                color: '#34d399',
+                padding: '2px 10px',
+                borderRadius: '20px',
+                fontWeight: 'normal'
+              }}>{users.length} online</span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#6b7280' }}>{users.length} members • {chat.length} messages</div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative hidden lg:block">
-            <input 
-              type="text" 
-              placeholder="Search messages..." 
-              className="bg-white/5 text-xs px-4 py-2 rounded-xl border border-white/10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all w-48"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <button onClick={copyRoomId} className="text-xs bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-xl transition-all font-semibold shadow-lg shadow-blue-600/20">Invite</button>
-          <button onClick={leaveRoom} className="text-xs bg-red-500/10 hover:bg-red-500/20 px-4 py-2 rounded-xl border border-red-500/20 text-red-400 transition-all">Exit</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <input
+            type="text"
+            placeholder="🔍 Search messages..."
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              color: 'white',
+              outline: 'none',
+              width: '180px',
+              transition: 'all 0.3s ease'
+            }}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+            onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
+          />
+          <button
+            onClick={() => setShowProfileModal(true)}
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              background: '#1e293b',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              overflow: 'hidden'
+            }}
+            onMouseEnter={(e) => e.target.style.background = '#334155'}
+            onMouseLeave={(e) => e.target.style.background = '#1e293b'}
+          >
+            {currentUser?.avatar ? (
+              <img src={currentUser.avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              username.charAt(0).toUpperCase()
+            )}
+          </button>
+          <button
+            onClick={copyRoomId}
+            style={{
+              background: '#3b82f6',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 20px rgba(59,130,246,0.2)'
+            }}
+            onMouseEnter={(e) => e.target.style.background = '#2563eb'}
+            onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
+          >
+            🔗 Invite
+          </button>
+          <button
+            onClick={leaveRoom}
+            style={{
+              background: 'rgba(244,63,94,0.1)',
+              border: '1px solid rgba(244,63,94,0.2)',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              color: '#f43f5e',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => { e.target.style.background = 'rgba(244,63,94,0.2)'; }}
+            onMouseLeave={(e) => { e.target.style.background = 'rgba(244,63,94,0.1)'; }}
+          >
+            ⚡ Exit
+          </button>
         </div>
       </div>
-      
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - User List */}
-        <div className="w-64 bg-[#0f172a] border-r border-white/5 hidden md:flex flex-col">
-          <div className="p-4 border-b border-white/5">
-            <select 
+
+      {/* Main Area */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Left Sidebar */}
+        <div style={{
+          width: '256px',
+          background: '#0a0f1e',
+          borderRight: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <select
+              style={{
+                width: '100%',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '8px',
+                padding: '8px',
+                fontSize: '12px',
+                color: 'white',
+                outline: 'none'
+              }}
               onChange={(e) => socket.emit('update-status', { roomId, status: e.target.value })}
-              className="w-full bg-white/5 text-xs p-2 rounded-lg outline-none border border-white/10"
             >
               <option value="online">🟢 Online</option>
               <option value="away">🟡 Away</option>
               <option value="busy">🔴 Busy</option>
             </select>
           </div>
-          <div className="p-4 border-b border-[#222d34]">
-            <h2 className="text-[#8696a0] text-xs font-bold uppercase tracking-widest">Participants</h2>
+          <div style={{
+            padding: '16px',
+            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span style={{ color: '#6b7280', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Participants</span>
+            <span style={{ color: '#60a5fa', fontSize: '10px' }}>{users.length}</span>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
             {users.map((user) => (
-              <div key={user.id} className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-2xl transition-all cursor-default group">
-                <div className="relative">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold shadow-sm ${user.role === 'ADMIN' ? 'bg-rose-500/20 text-rose-500' : 'bg-slate-700/50'}`}>
-                  {user.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#0f172a] ${getStatusColor(user.status)}`}></div>
+              <div
+                key={user.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px',
+                  borderRadius: '16px',
+                  transition: 'all 0.3s ease',
+                  cursor: 'default'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ position: 'relative', width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, overflow: 'hidden' }}>
+                  {user.avatar ? (
+                    <img src={user.avatar} alt={user.username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    user.username.charAt(0).toUpperCase()
+                  )}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '-4px',
+                    right: '-4px',
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
+                    border: '2px solid #0a0f1e',
+                    background: getStatusColor(user.status)
+                  }}></div>
                 </div>
-                <div className="flex-1 flex flex-col">
-                  <span className="text-sm font-semibold flex items-center gap-1">
-                    {user.username} {user.username === username && "(You)"}
-                  </span>
-                  <span className={`text-[9px] font-black uppercase tracking-tighter ${user.role === 'ADMIN' ? 'text-rose-400' : user.role === 'MANAGER' ? 'text-indigo-400' : 'text-slate-500'}`}>
-                    {user.role}
-                  </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {user.username} {user.username === username && <span style={{ fontSize: '8px', color: '#60a5fa' }}>(You)</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{
+                      fontSize: '8px',
+                      fontWeight: 900,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: user.role === 'ADMIN' ? '#f43f5e' : user.role === 'MANAGER' ? '#818cf8' : '#4b5563'
+                    }}>
+                      {user.role}
+                    </span>
+                    {user.bio && <span style={{ fontSize: '8px', color: '#4b5563' }}>· {user.bio}</span>}
+                  </div>
                 </div>
                 {isStaff && user.username !== username && (
-                  <button 
+                  <button
                     onClick={() => kickUser(user.id)}
-                    className="opacity-0 group-hover:opacity-100 text-[9px] bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white px-2 py-1 rounded-lg transition-all"
-                  >Kick</button>
+                    style={{
+                      fontSize: '9px',
+                      background: 'rgba(244,63,94,0.1)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '4px 8px',
+                      color: '#f43f5e',
+                      cursor: 'pointer',
+                      opacity: 0,
+                      transition: 'all 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
+                  >
+                    Kick
+                  </button>
                 )}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right Sidebar - Tabbed Info */}
-        <div className="w-80 bg-[#0f172a] border-l border-white/5 flex flex-col">
-          <div className="flex border-b border-white/5">
-            {['info', 'tasks', 'stats'].map(tab => (
-              <button 
-                key={tab} 
-                onClick={() => setRightSidebarTab(tab)}
-                className={`flex-1 p-3 text-[10px] font-black uppercase tracking-widest transition-all ${rightTab === tab ? 'text-blue-400 border-b-2 border-blue-500 bg-blue-500/5' : 'text-slate-500'}`}
-              >{tab}</button>
-            ))}
-          </div>
-          <div className="flex-1 overflow-y-auto p-4">
-            {rightTab === 'info' && (
-              <div className="space-y-6">
-                <h3 className="text-xs font-bold text-slate-400 uppercase">📌 Pinned Messages</h3>
-                {pinnedMessages.map(pm => (
-                  <div key={pm.id} className="bg-white/5 p-3 rounded-xl border border-white/5">
-                    <p className="text-[11px] text-blue-400 font-bold mb-1">{pm.username}</p>
-                    <p className="text-xs text-slate-300 line-clamp-2">{pm.text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {rightTab === 'tasks' && (
-              <div className="space-y-4">
-                {['todo', 'doing', 'done'].map(status => (
-                  <div key={status} className="space-y-2">
-                    <h4 className="text-[10px] font-black uppercase text-slate-500">{status}</h4>
-                    {tasks.filter(t => t.status === status).map(task => (
-                      <div key={task.id} className="bg-slate-800/50 p-3 rounded-xl border border-white/5 group">
-                        <p className="text-xs font-semibold mb-2">{task.title}</p>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          {['todo', 'doing', 'done'].filter(s => s !== status).map(s => (
-                            <button key={s} onClick={() => updateTaskStatus(task.id, s)} className="text-[9px] bg-white/5 px-2 py-0.5 rounded border border-white/10 hover:bg-blue-600 transition-colors uppercase">{s}</button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-                <button onClick={() => {
-                  const title = prompt("Task title?");
-                  if(title) socket.emit('create-task', { roomId, task: { title, assignee: username } });
-                }} className="w-full py-2 bg-blue-600 rounded-xl text-xs font-bold mt-4">+ New Task</button>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col relative overflow-hidden bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-            <div className="max-w-4xl mx-auto space-y-6 pt-4">
-              {filteredChat.map((msg, i) => (
-                msg.system ? (
-                  <div key={msg.id || i} className="flex justify-center">
-                    <span className="bg-white/5 text-slate-500 text-[10px] px-4 py-1.5 rounded-full uppercase font-bold tracking-widest border border-white/5">{msg.text}</span>
-                  </div>
-                ) : (
-                  <div key={msg.id || i} className={`flex group ${msg.username === username ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`flex items-end gap-2 max-w-[85%] ${msg.username === username ? 'flex-row-reverse' : ''}`}>
-                      <div className="w-8 h-8 rounded-full bg-slate-700 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-white/10">
-                        {msg.username.charAt(0)}
-                      </div>
-                      <div className={`px-4 py-3 rounded-2xl relative shadow-xl group transition-all hover:ring-1 hover:ring-white/10 ${msg.username === username ? 'bg-gradient-to-br from-blue-600 to-blue-700 rounded-br-none' : 'bg-slate-800 rounded-bl-none'}`}>
-                      {msg.username !== username && <p className="text-blue-300 text-[10px] font-black uppercase mb-1 tracking-wider">{msg.username}</p>}
-                      {msg.image && <img src={msg.image} alt="shared" className="rounded-xl mb-2 max-w-full max-h-80 object-cover shadow-md" />}
-                      {msg.poll && (
-                        <div className="bg-black/20 p-4 rounded-xl border border-white/5 mb-2 min-w-[240px]">
-                          <p className="font-bold text-sm mb-3 text-blue-400">📊 {msg.poll.question}</p>
-                          {msg.poll.options.map((opt, idx) => (
-                            <button key={idx} onClick={() => handleVote(msg.id, idx)} className="w-full text-left mb-2 group/btn">
-                              <div className="flex justify-between text-[10px] mb-1 px-1 text-slate-300"><span>{opt.text}</span><span>{opt.votes} votes</span></div>
-                              <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                                <div className="bg-blue-400 h-full transition-all duration-700 ease-out" style={{ width: `${msg.poll.options.reduce((a, b) => a + b.votes, 0) > 0 ? (opt.votes / msg.poll.options.reduce((a, b) => a + b.votes, 0)) * 100 : 0}%` }}></div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0a0f1e' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+            <div style={{ maxWidth: '1024px', margin: '0 auto', paddingTop: '16px' }}>
+              {filteredChat.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '256px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#e2e8f0' }}>No messages yet</div>
+                  <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '8px' }}>Start the conversation by sending a message!</div>
+                </div>
+              ) : (
+                filteredChat.map((msg, i) => (
+                  msg.system ? (
+                    <div key={msg.id || i} style={{ display: 'flex', justifyContent: 'center' }}>
+                      <span style={{ background: 'rgba(255,255,255,0.05)', color: '#6b7280', fontSize: '10px', padding: '6px 16px', borderRadius: '20px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.1em', border: '1px solid rgba(255,255,255,0.05)' }}>{msg.text}</span>
+                    </div>
+                  ) : (
+                    <div
+                      key={msg.id || i}
+                      data-message-id={msg.id}
+                      style={{
+                        display: 'flex',
+                        marginBottom: '8px',
+                        animation: 'fadeIn 0.3s ease-out',
+                        justifyContent: msg.username === username ? 'flex-end' : 'flex-start'
+                      }}
+                      onMouseEnter={(e) => {
+                        const menu = e.currentTarget.querySelector('.action-menu');
+                        if (menu) menu.style.display = 'flex';
+                      }}
+                      onMouseLeave={(e) => {
+                        const menu = e.currentTarget.querySelector('.action-menu');
+                        if (menu) menu.style.display = 'none';
+                      }}
+                    >
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        gap: '8px',
+                        maxWidth: '85%',
+                        flexDirection: msg.username === username ? 'row-reverse' : 'row'
+                      }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, border: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+                          {msg.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{
+                          padding: '12px 16px',
+                          borderRadius: '16px',
+                          position: 'relative',
+                          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                          minWidth: '60px',
+                          ...(msg.username === username 
+                            ? { background: 'linear-gradient(135deg, #3b82f6, #6366f1)', borderBottomRightRadius: '4px' }
+                            : { background: 'rgba(255,255,255,0.07)', borderBottomLeftRadius: '4px' }
+                          )
+                        }}>
+                          {/* Reply Indicator */}
+                          {msg.replyTo && (
+                            <div style={{ background: 'rgba(255,255,255,0.08)', padding: '6px 12px', borderRadius: '8px', marginBottom: '8px', borderLeft: '2px solid #60a5fa', fontSize: '11px' }}>
+                              <span style={{ color: '#60a5fa', fontWeight: 700 }}>@{msg.replyTo.username}</span>
+                              <span style={{ color: '#94a3b8', marginLeft: '8px' }}>{msg.replyTo.text}</span>
+                            </div>
+                          )}
+                          
+                          {msg.username !== username && (
+                            <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#60a5fa', marginBottom: '4px' }}>{msg.username}</div>
+                          )}
+                          
+                          {/* File */}
+                          {msg.file && (
+                            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '12px', marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '48px', height: '48px', background: 'rgba(59,130,246,0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
+                                  {getFileIcon(msg.file.type)}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.file.name}</div>
+                                  <div style={{ fontSize: '10px', color: '#6b7280' }}>{(msg.file.size / 1024).toFixed(1)} KB</div>
+                                </div>
+                                <a href={msg.file.data} download={msg.file.name} style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>⬇️</a>
                               </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                        <p className="text-[14px] leading-relaxed pr-8">{renderMessageText(msg.text)}</p>
-                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                          <div className="flex gap-1 mt-2">
-                            {Object.entries(msg.reactions).map(([e, c]) => (
-                              <span key={e} className="bg-black/30 px-1.5 py-0.5 rounded text-[10px]">{e} {c}</span>
-                            ))}
+                            </div>
+                          )}
+                          
+                          {/* Image */}
+                          {msg.image && (
+                            <img src={msg.image} alt="shared" style={{ borderRadius: '12px', marginBottom: '8px', maxWidth: '100%', maxHeight: '320px', objectFit: 'cover', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', cursor: 'pointer' }} onClick={() => window.open(msg.image, '_blank')} />
+                          )}
+                          
+                          {/* Poll */}
+                          {msg.poll && (
+                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '8px', minWidth: '240px' }}>
+                              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '12px', color: '#60a5fa' }}>📊 {msg.poll.question}</div>
+                              {msg.poll.options.map((opt, idx) => (
+                                <button key={idx} onClick={() => handleVote(msg.id, idx)} style={{ width: '100%', textAlign: 'left', marginBottom: '8px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                                  <div style={{ position: 'relative', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '8px', overflow: 'hidden' }}>
+                                    <div style={{
+                                      position: 'absolute',
+                                      top: 0,
+                                      left: 0,
+                                      height: '100%',
+                                      background: 'linear-gradient(90deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2))',
+                                      borderRadius: '8px',
+                                      transition: 'width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                                      width: `${msg.poll.options.reduce((a, b) => a + b.votes, 0) > 0 ? (opt.votes / msg.poll.options.reduce((a, b) => a + b.votes, 0)) * 100 : 0}%`
+                                    }}></div>
+                                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                      <span style={{ color: '#e2e8f0' }}>{opt.text}</span>
+                                      <span style={{ fontWeight: 700, color: '#94a3b8' }}>{opt.votes} votes</span>
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          
+                          <div style={{ fontSize: '14px', lineHeight: 1.6, paddingRight: '32px' }}>
+                            {renderMessageText(msg.text)}
+                            {msg.edited && <span style={{ fontSize: '8px', color: '#6b7280', marginLeft: '4px' }}>(edited {msg.editedAt})</span>}
                           </div>
-                        )}
-                        <div className="flex items-center gap-1 absolute bottom-1 right-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[8px]">{msg.time}</span>
-                          {msg.username === username && <span className="text-[10px] text-blue-400">✓✓</span>}
-                        </div>
-                        {/* Reaction Overlay */}
-                        <div className="absolute -top-6 right-0 hidden group-hover:flex gap-1 bg-slate-900 p-1 rounded-lg shadow-xl border border-white/10 scale-90 origin-bottom-right">
-                          {['👍','❤️','😂','😮'].map(e => (
-                            <button key={e} onClick={() => addReaction(msg.id, e)} className="hover:scale-125 transition-transform">{e}</button>
-                          ))}
-                          {isStaff && <button onClick={() => pinMessage(msg.id)} className="text-[10px] px-1 hover:text-amber-400">📌</button>}
+                          
+                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                              {Object.entries(msg.reactions).map(([e, c]) => (
+                                <span key={e} style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px' }}>{e} {c}</span>
+                              ))}
+                            </div>
+                          )}
+                          
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'absolute', bottom: '4px', right: '8px', opacity: 0.6, fontSize: '8px' }}>
+                            <span>{msg.time}</span>
+                            {msg.username === username && (
+                              <span style={{ fontSize: '10px', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                {msg.readBy && msg.readBy.length > 0 ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                    ✓✓ <span style={{ fontSize: '8px', color: '#6b7280' }}>{msg.readBy.length}</span>
+                                  </span>
+                                ) : '✓'}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Action Menu */}
+                          <div className="action-menu" style={{
+                            position: 'absolute',
+                            top: '-24px',
+                            right: 0,
+                            display: 'none',
+                            gap: '4px',
+                            background: '#0f172a',
+                            padding: '4px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+                          }}>
+                            <button onClick={() => handleReply(msg)} style={{ fontSize: '10px', padding: '4px 6px', background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Reply">↩️</button>
+                            {msg.username === username && (
+                              <button onClick={() => handleEditMessage(msg)} style={{ fontSize: '10px', padding: '4px 6px', background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Edit">✏️</button>
+                            )}
+                            {['👍','❤️','😂','😮'].map(e => (
+                              <button key={e} onClick={() => addReaction(msg.id, e)} style={{ fontSize: '14px', padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }}>{e}</button>
+                            ))}
+                            {(isStaff || msg.username === username) && (
+                              <button onClick={() => deleteMessage(msg.id)} style={{ fontSize: '10px', padding: '4px 6px', background: 'none', border: 'none', color: '#f43f5e', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Delete">🗑️</button>
+                            )}
+                            {isStaff && (
+                              <button 
+                                onClick={() => {
+                                  console.log('📌 Pin button clicked for:', msg.id);
+                                  pinMessage(msg.id);
+                                }} 
+                                style={{ 
+                                  fontSize: '10px', 
+                                  padding: '4px 6px', 
+                                  background: 'none', 
+                                  border: 'none', 
+                                  color: pinnedMessages.some(m => m.id === msg.id) ? '#34d399' : '#fbbf24', 
+                                  cursor: 'pointer', 
+                                  borderRadius: '4px', 
+                                  transition: 'all 0.2s ease' 
+                                }} 
+                                title={pinnedMessages.some(m => m.id === msg.id) ? "Unpin" : "Pin"}
+                              >
+                                {pinnedMessages.some(m => m.id === msg.id) ? '📌✅' : '📌'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
-              ))}
+                  )
+                ))
+              )}
               <div ref={chatEndRef} />
             </div>
+          </div>
+        </div>
+
+        {/* Right Sidebar */}
+        <div style={{
+          width: '320px',
+          background: '#0a0f1e',
+          borderLeft: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            {['info', 'tasks', 'stats'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setRightSidebarTab(tab)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  background: 'none',
+                  border: 'none',
+                  color: rightTab === tab ? '#60a5fa' : '#4b5563',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  position: 'relative'
+                }}
+              >
+                {tab}
+                {rightTab === tab && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '2px',
+                    background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                    borderRadius: '2px'
+                  }}></div>
+                )}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+            {rightTab === 'info' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📌 Pinned Messages</span>
+                  <span style={{ fontSize: '10px', color: '#60a5fa' }}>{pinnedMessages.length}</span>
+                </div>
+                {pinnedMessages.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: '#4b5563', fontSize: '12px', padding: '32px 0' }}>
+                    No pinned messages yet
+                    <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '8px' }}>
+                      {isStaff ? 'ADMIN can pin messages by clicking 📌' : 'Only ADMIN can pin messages'}
+                    </div>
+                  </div>
+                ) : (
+                  pinnedMessages.map(pm => (
+                    <div key={pm.id} style={{ 
+                      background: 'rgba(255,255,255,0.03)', 
+                      padding: '12px', 
+                      borderRadius: '12px', 
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      marginBottom: '8px',
+                      position: 'relative'
+                    }}>
+                      <div style={{ fontSize: '11px', color: '#60a5fa', fontWeight: 700, marginBottom: '4px' }}>
+                        {pm.username} 
+                        {pm.pinnedBy && <span style={{ fontSize: '8px', color: '#6b7280', marginLeft: '8px' }}>pinned by {pm.pinnedBy}</span>}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{pm.text}</div>
+                      {isStaff && (
+                        <button 
+                          onClick={() => unpinMessage(pm.id)}
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            background: 'none',
+                            border: 'none',
+                            color: '#6b7280',
+                            cursor: 'pointer',
+                            fontSize: '10px',
+                            padding: '4px'
+                          }}
+                          title="Unpin"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+            {rightTab === 'tasks' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>✅ Tasks</span>
+                  <span style={{ fontSize: '10px', color: '#60a5fa' }}>{tasks.length}</span>
+                </div>
+                {['todo', 'doing', 'done'].map(status => {
+                  const statusTasks = tasks.filter(t => t.status === status);
+                  return (
+                    <div key={status} style={{ marginBottom: '12px' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: status === 'todo' ? '#fbbf24' : status === 'doing' ? '#60a5fa' : '#34d399', marginBottom: '4px' }}>
+                        {status} ({statusTasks.length})
+                      </div>
+                      {statusTasks.map(task => (
+                        <div key={task.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px', marginBottom: '8px', transition: 'all 0.3s ease' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>{task.title}</div>
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            {['todo', 'doing', 'done'].filter(s => s !== status).map(s => (
+                              <button key={s} onClick={() => updateTaskStatus(task.id, s)} style={{ fontSize: '9px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', padding: '2px 8px', color: '#94a3b8', cursor: 'pointer', textTransform: 'uppercase', transition: 'all 0.3s ease' }} onMouseEnter={(e) => { e.target.style.background = '#3b82f6'; e.target.style.color = 'white'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = '#94a3b8'; }}>{s}</button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+                <button onClick={() => { const title = prompt('📝 Enter task title:'); if (title && title.trim()) { socket.emit('create-task', { roomId, task: { title: title.trim(), assignee: username, createdBy: username, createdAt: new Date().toISOString() } }); showToast('✅ Task created!', 'success'); } }} style={{ width: '100%', padding: '10px', background: '#3b82f6', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }} onMouseEnter={(e) => e.target.style.background = '#2563eb'} onMouseLeave={(e) => e.target.style.background = '#3b82f6'}>+ New Task</button>
+              </div>
+            )}
+            {rightTab === 'stats' && (
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '16px' }}>📊 Statistics</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Total Messages</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{chat.filter(m => !m.system).length}</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Active Users</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{users.length}</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Pinned Messages</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{pinnedMessages.length}</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Tasks</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{tasks.length}</div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Input Area */}
-      <div className="bg-[#1e293b]/50 backdrop-blur-xl border-t border-white/5 p-4 flex flex-col z-10">
-        <div className="flex gap-2 mb-2 ml-12">
-          {suggestedReplies.map((reply, i) => (
-            <button 
-              key={i} 
-              onClick={() => { setMessage(reply); sendMessage(null); }}
-              className="bg-blue-500/10 text-[10px] text-blue-400 px-3 py-1 rounded-full border border-blue-500/20 hover:bg-blue-500 hover:text-white transition-all font-bold"
-            >
-              {reply}
-            </button>
-          ))}
-        </div>
-        {typingUser && (
-          <p className="text-[10px] text-emerald-400 font-bold mb-2 ml-12 transition-all flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-            {typingUser} is typing...
-          </p>
-        )}
-        <form onSubmit={sendMessage} className="flex items-center gap-3 max-w-5xl mx-auto w-full">
-          <label className="cursor-pointer text-slate-400 hover:text-blue-400 transition p-2 rounded-xl hover:bg-white/5">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M11.999 14.942c2.001 0 3.531-1.53 3.531-3.531V4.35c0-2.001-1.53-3.531-3.531-3.531S8.469 2.35 8.469 4.35v7.061c0 2.001 1.53 3.531 3.53 3.531zm6.235-3.531c0 3.531-2.942 6.002-6.235 6.002s-6.235-2.471-6.235-6.002H3.705c0 4.001 3.177 7.296 7.061 7.767V23.5h2.467v-4.324c3.884-.471 7.061-3.766 7.061-7.767h-2.059z"></path>
-            </svg>
-            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-          </label>
-          <div className="relative" ref={emojiPickerRef}>
-              <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker(prev => !prev)}
-                  className="text-slate-400 hover:text-amber-400 transition p-2 rounded-xl hover:bg-white/5"
-                  title="Choose emoji"
-              >
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10zM8 9a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm8 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-4 8c-2.206 0-4-1.794-4-4h2c0 1.103.897 2 2 2s2-.897 2-2h2c0 2.206-1.794 4-4 4z"/>
-                  </svg>
-              </button>
-              {showEmojiPicker && (
-                  <div className="absolute bottom-full left-0 mb-4 bg-slate-800 border border-white/10 rounded-2xl shadow-2xl p-3 grid grid-cols-5 gap-1 z-50 animate-in fade-in slide-in-from-bottom-2">
-                      {emojis.map((emoji, index) => (
-                          <button key={index} type="button" onClick={() => handleEmojiSelect(emoji)} className="p-2 text-xl hover:bg-white/10 rounded-xl transition-all hover:scale-125">
-                              {emoji}
-                          </button>
-                      ))}
-                  </div>
-              )}
+      <div style={{
+        background: 'rgba(10,15,30,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        padding: '12px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 10
+      }}>
+        {/* Smart Replies */}
+        {suggestedReplies.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px', marginLeft: '48px' }}>
+            {suggestedReplies.map((reply, i) => (
+              <button key={i} onClick={() => { setMessage(reply); sendMessage(null); }} style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '20px', padding: '4px 14px', fontSize: '10px', color: '#60a5fa', cursor: 'pointer', transition: 'all 0.3s ease', fontWeight: 700 }} onMouseEnter={(e) => { e.target.style.background = '#3b82f6'; e.target.style.color = 'white'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(59,130,246,0.1)'; e.target.style.color = '#60a5fa'; }}>{reply}</button>
+            ))}
           </div>
-          <input 
-            type="datetime-local" 
-            className="bg-white/5 text-[9px] text-slate-400 outline-none w-32 border border-white/5 rounded-lg px-2 py-1"
-            value={scheduledTime} onChange={e => setScheduledTime(e.target.value)}
-          />
-          <input 
-            type="text" 
+        )}
+
+        {/* Reply Indicator */}
+        {replyTo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59,130,246,0.1)', padding: '8px 16px', borderRadius: '12px', marginBottom: '8px', marginLeft: '48px', borderLeft: '4px solid #3b82f6' }}>
+            <span style={{ fontSize: '11px', color: '#60a5fa' }}>Replying to {replyTo.username}:</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyTo.text}</span>
+            <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+          </div>
+        )}
+
+        {/* Edit Indicator */}
+        {editingMessage && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(251,191,36,0.1)', padding: '8px 16px', borderRadius: '12px', marginBottom: '8px', marginLeft: '48px', borderLeft: '4px solid #fbbf24' }}>
+            <span style={{ fontSize: '11px', color: '#fbbf24' }}>Editing message:</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editingMessage.text}</span>
+            <button onClick={() => { setEditingMessage(null); setMessage(''); }} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+          </div>
+        )}
+
+        {/* Typing Indicator */}
+        {typingUser && (
+          <div style={{ fontSize: '10px', color: '#34d399', fontWeight: 700, marginBottom: '8px', marginLeft: '48px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399', display: 'inline-block', animation: 'pulse 1.5s infinite' }}></span>
+            {typingUser} is typing...
+          </div>
+        )}
+
+        {/* Input Form */}
+        <form onSubmit={sendMessage} style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '1024px', margin: '0 auto', width: '100%' }}>
+          {/* Image Upload */}
+          <label style={{ background: 'none', border: 'none', color: '#6b7280', padding: '8px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#60a5fa'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M11.999 14.942c2.001 0 3.531-1.53 3.531-3.531V4.35c0-2.001-1.53-3.531-3.531-3.531S8.469 2.35 8.469 4.35v7.061c0 2.001 1.53 3.531 3.53 3.531zm6.235-3.531c0 3.531-2.942 6.002-6.235 6.002s-6.235-2.471-6.235-6.002H3.705c0 4.001 3.177 7.296 7.061 7.767V23.5h2.467v-4.324c3.884-.471 7.061-3.766 7.061-7.767h-2.059z"/>
+            </svg>
+            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
+          </label>
+
+          {/* File Upload */}
+          <label style={{ background: 'none', border: 'none', color: '#6b7280', padding: '8px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#34d399'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+              <polyline points="13 2 13 9 20 9"/>
+            </svg>
+            <input type="file" style={{ display: 'none' }} onChange={handleFileUpload} accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.txt,.ppt,.pptx" />
+          </label>
+
+          {/* Emoji Picker */}
+          <div style={{ position: 'relative' }} ref={emojiPickerRef}>
+            <button type="button" onClick={() => setShowEmojiPicker(prev => !prev)} style={{ background: 'none', border: 'none', color: '#6b7280', padding: '8px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#fbbf24'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10zM8 9a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm8 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-4 8c-2.206 0-4-1.794-4-4h2c0 1.103.897 2 2 2s2-.897 2-2h2c0 2.206-1.794 4-4 4z"/>
+              </svg>
+            </button>
+            {showEmojiPicker && (
+              <div style={{ position: 'absolute', bottom: '48px', left: 0, background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '12px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+                {emojis.map((emoji, index) => (
+                  <button key={index} type="button" onClick={() => handleEmojiSelect(emoji)} style={{ padding: '8px', fontSize: '20px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '8px', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>{emoji}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Message Input */}
+          <input
+            id="message-input"
+            type="text"
             value={message}
             onChange={handleTyping}
-            placeholder="Type a message"
-            className="flex-1 bg-white/5 text-[#f1f5f9] px-5 py-3 rounded-2xl outline-none placeholder-slate-500 text-sm border border-white/10 focus:border-blue-500/50 transition-all"
+            placeholder={replyTo ? `Reply to ${replyTo.username}...` : editingMessage ? "Edit message..." : "Type a message..."}
+            style={{
+              flex: 1,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '24px',
+              padding: '12px 20px',
+              fontSize: '14px',
+              color: 'white',
+              outline: 'none',
+              transition: 'all 0.3s ease',
+              minWidth: '100px'
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+            onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
           />
-          <button type="submit" className="bg-blue-600 p-3 rounded-2xl hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/30 active:scale-95">
-             <svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" fill="white">
-              <path d="M1.101,21.757L23.8,12.028L1.101,2.3l0.011,7.912l13.623,1.816L1.112,13.845L1.101,21.757z"></path>
+
+          {/* Send Button */}
+          <button
+            type="submit"
+            style={{
+              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              border: 'none',
+              borderRadius: '50%',
+              padding: '12px',
+              color: 'white',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 20px rgba(59,130,246,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '48px',
+              height: '48px',
+              flexShrink: 0
+            }}
+            onMouseEnter={(e) => { e.target.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)'; }}
+            onMouseLeave={(e) => { e.target.style.background = 'linear-gradient(135deg, #3b82f6, #8b5cf6)'; }}
+          >
+            <svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" fill="white">
+              <path d="M1.101,21.757L23.8,12.028L1.101,2.3l0.011,7.912l13.623,1.816L1.112,13.845L1.101,21.757z"/>
             </svg>
           </button>
         </form>
       </div>
 
-      {/* Create Poll Modal */}
-      {showPollModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 p-8 rounded-3xl w-full max-w-md border border-white/10 shadow-2xl scale-in">
-            <h2 className="text-xl font-bold mb-4">Create a Poll</h2>
-            <input 
-              placeholder="Question" 
-              className="w-full bg-white/5 p-3 rounded-2xl mb-4 outline-none border border-white/5 focus:border-blue-500 transition-all"
-              value={pollForm.question} onChange={e => setPollForm({...pollForm, question: e.target.value})}
-            />
-            {pollForm.options.map((opt, i) => (
-              <input 
-                key={i} placeholder={`Option ${i+1}`} 
-                className="w-full bg-white/5 p-3 rounded-2xl mb-2 outline-none border border-white/5 text-sm"
-                value={opt} onChange={e => {
-                  const newOpts = [...pollForm.options];
-                  newOpts[i] = e.target.value;
-                  setPollForm({...pollForm, options: newOpts});
-                }}
-              />
-            ))}
-            <button className="text-blue-400 text-xs font-bold mb-6 hover:text-blue-300 transition-colors" onClick={() => setPollForm({...pollForm, options: [...pollForm.options, '']})}>+ Add Option</button>
-            <div className="flex gap-2">
-              <button onClick={() => setShowPollModal(false)} className="flex-1 py-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-all font-bold">Cancel</button>
-              <button onClick={createPoll} className="flex-1 py-3 bg-blue-600 rounded-2xl hover:bg-blue-500 transition-all font-bold shadow-lg shadow-blue-600/20">Post Poll</button>
+      {/* Poll Button */}
+      <button
+        onClick={() => setShowPollModal(true)}
+        style={{
+          position: 'fixed',
+          bottom: '96px',
+          right: '24px',
+          background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+          border: 'none',
+          borderRadius: '50%',
+          padding: '14px',
+          color: 'white',
+          fontSize: '20px',
+          cursor: 'pointer',
+          boxShadow: '0 8px 32px rgba(59,130,246,0.3)',
+          transition: 'all 0.3s ease',
+          zIndex: 10
+        }}
+        onMouseEnter={(e) => { e.target.style.transform = 'scale(1.1)'; }}
+        onMouseLeave={(e) => { e.target.style.transform = 'scale(1)'; }}
+      >
+        📊
+      </button>
+
+      {/* Profile Modal */}
+      {showProfileModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+          padding: '16px'
+        }} onClick={() => setShowProfileModal(false)}>
+          <div style={{
+            background: '#0f172a',
+            padding: '32px',
+            borderRadius: '24px',
+            maxWidth: '448px',
+            width: '100%',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px', background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Edit Profile</div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '24px' }}>
+              <div style={{ width: '96px', height: '96px', borderRadius: '50%', background: 'linear-gradient(135deg, #1e293b, #0f172a)', overflow: 'hidden', marginBottom: '12px', position: 'relative', cursor: 'pointer' }} onMouseEnter={(e) => { const label = e.currentTarget.querySelector('.avatar-label'); if (label) label.style.opacity = 1; }} onMouseLeave={(e) => { const label = e.currentTarget.querySelector('.avatar-label'); if (label) label.style.opacity = 0; }}>
+                {avatar ? (
+                  <img src={avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', fontWeight: 700, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
+                    {username.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <label className="avatar-label" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.3s ease', cursor: 'pointer' }}>
+                  <span style={{ color: 'white', fontSize: '12px', fontWeight: 700 }}>Change</span>
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+                </label>
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>{username}</div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '10px', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bio</label>
+              <textarea style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '12px', resize: 'none', boxSizing: 'border-box' }} rows="3" placeholder="Tell about yourself..." value={bio} onChange={(e) => setBio(e.target.value)} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button onClick={() => setShowProfileModal(false)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease' }}>Cancel</button>
+              <button onClick={updateProfile} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }}>💾 Save Profile</button>
             </div>
           </div>
         </div>
       )}
 
-      <button 
-        onClick={() => setShowPollModal(true)}
-        className="fixed bottom-24 right-6 bg-blue-600 p-3 rounded-full shadow-lg hover:scale-110 transition"
-        title="Create Poll"
-      >
-        📊
-      </button>
+      {/* Poll Modal */}
+      {showPollModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+          padding: '16px'
+        }} onClick={() => setShowPollModal(false)}>
+          <div style={{
+            background: '#0f172a',
+            padding: '32px',
+            borderRadius: '24px',
+            maxWidth: '448px',
+            width: '100%',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px', background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>📊 Create a Poll</div>
+            
+            <input placeholder="Question" style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '12px', boxSizing: 'border-box' }} value={pollForm.question} onChange={e => setPollForm({ ...pollForm, question: e.target.value })} />
+            
+            {pollForm.options.map((opt, i) => (
+              <input key={i} placeholder={`Option ${i + 1}`} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '12px', boxSizing: 'border-box' }} value={opt} onChange={e => { const newOpts = [...pollForm.options]; newOpts[i] = e.target.value; setPollForm({ ...pollForm, options: newOpts }); }} />
+            ))}
+            
+            <button onClick={() => setPollForm({ ...pollForm, options: [...pollForm.options, ''] })} style={{ color: '#60a5fa', fontSize: '12px', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', marginBottom: '16px' }}>+ Add Option</button>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button onClick={() => setShowPollModal(false)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease' }}>Cancel</button>
+              <button onClick={createPoll} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }}>📤 Post Poll</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

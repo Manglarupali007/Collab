@@ -10,6 +10,8 @@ function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [toast, setToast] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -17,22 +19,37 @@ function Home() {
     if (token) setIsLoggedIn(true);
   }, []);
 
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const handleAuth = async () => {
+    if (!username.trim() || password.length < 6) {
+      showToast('Username and password (min 6 chars) required', 'error');
+      return;
+    }
+
     setLoading(true);
     try {
       const endpoint = isSignup ? '/api/register' : '/api/login';
-      const res = await axios.post(`${process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000'}${endpoint}`, { username, password });
+      const res = await axios.post(`${process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000'}${endpoint}`, { 
+        username: username.trim(), 
+        password 
+      });
       
       if (isSignup) {
-        alert("Swagat hai! Registration safal raha. Ab login karein.");
+        showToast('🎉 Registration successful! Please login.', 'success');
         setIsSignup(false);
+        setPassword('');
       } else {
         localStorage.setItem('token', res.data.token);
         localStorage.setItem('username', res.data.username);
         setIsLoggedIn(true);
+        showToast(`👋 Welcome back, ${res.data.username}!`, 'success');
       }
     } catch (err) {
-      alert(err.response?.data?.error || "Auth failed");
+      showToast(err.response?.data?.error || 'Authentication failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -41,136 +58,550 @@ function Home() {
   const handleLogout = () => {
     localStorage.clear();
     setIsLoggedIn(false);
+    showToast('Logged out successfully', 'info');
   };
 
   const createRoom = () => {
-    const roomPass = prompt("Set a password for this private room:");
-    if(!roomPass) {
-      alert("Room password is required");
+    const roomPass = prompt('🔒 Set a password for this private room:');
+    if (!roomPass || roomPass.length < 4) {
+      showToast('Password must be at least 4 characters', 'error');
       return;
     }
-    const id = uuidv4().slice(0, 8);
-    navigate(`/editor/${id}`, { state: { username: localStorage.getItem('username'), password: roomPass } });
+    const id = Math.random().toString(36).substr(2, 8);
+    navigate(`/editor/${id}`, { 
+      state: { 
+        username: localStorage.getItem('username'), 
+        password: roomPass 
+      } 
+    });
   };
 
   const joinRoom = () => {
-    const roomPass = prompt("Enter room password:");
-    if(!roomId || !roomPass) {
-      alert("Room ID and password are required");
+    if (!roomId.trim()) {
+      showToast('Please enter a room ID', 'error');
       return;
     }
-    navigate(`/editor/${roomId}`, { state: { username: localStorage.getItem('username'), password: roomPass } });
+    const roomPass = prompt('🔑 Enter room password:');
+    if (!roomPass) {
+      showToast('Password is required to join', 'error');
+      return;
+    }
+    navigate(`/editor/${roomId.trim()}`, { 
+      state: { 
+        username: localStorage.getItem('username'), 
+        password: roomPass 
+      } 
+    });
+  };
+
+  // ===== STYLES =====
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px',
+      background: '#0a0f1e',
+      position: 'relative',
+      overflow: 'hidden'
+    },
+    bgBlur1: {
+      position: 'absolute',
+      top: '-20%',
+      left: '-10%',
+      width: '50%',
+      height: '50%',
+      background: 'rgba(59, 130, 246, 0.1)',
+      borderRadius: '50%',
+      filter: 'blur(120px)',
+      pointerEvents: 'none'
+    },
+    bgBlur2: {
+      position: 'absolute',
+      bottom: '-20%',
+      right: '-10%',
+      width: '50%',
+      height: '50%',
+      background: 'rgba(139, 92, 246, 0.1)',
+      borderRadius: '50%',
+      filter: 'blur(120px)',
+      pointerEvents: 'none'
+    },
+    bgBlur3: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: '40%',
+      height: '40%',
+      background: 'rgba(16, 185, 129, 0.05)',
+      borderRadius: '50%',
+      filter: 'blur(100px)',
+      pointerEvents: 'none'
+    },
+    card: {
+      position: 'relative',
+      zIndex: 10,
+      width: '100%',
+      maxWidth: '440px',
+      background: 'rgba(255, 255, 255, 0.06)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      borderRadius: '24px',
+      padding: '32px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.3), 0 0 40px rgba(59,130,246,0.15)'
+    },
+    logoContainer: {
+      textAlign: 'center',
+      marginBottom: '40px'
+    },
+    logoBox: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '80px',
+      height: '80px',
+      borderRadius: '16px',
+      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+      marginBottom: '16px',
+      boxShadow: '0 0 40px rgba(59,130,246,0.25)'
+    },
+    logoText: {
+      fontSize: '48px',
+      fontWeight: 900,
+      letterSpacing: '-0.025em',
+      background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      backgroundClip: 'text'
+    },
+    tagline: {
+      color: '#6b7280',
+      fontSize: '10px',
+      fontWeight: 500,
+      textTransform: 'uppercase',
+      letterSpacing: '0.2em',
+      marginTop: '8px'
+    },
+    inputWrapper: {
+      position: 'relative',
+      marginBottom: '16px'
+    },
+    inputIcon: {
+      position: 'absolute',
+      top: '50%',
+      left: '16px',
+      transform: 'translateY(-50%)',
+      color: '#6b7280'
+    },
+    input: {
+      width: '100%',
+      padding: '14px 16px 14px 44px',
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: '12px',
+      color: 'white',
+      fontSize: '14px',
+      outline: 'none',
+      transition: 'all 0.3s ease',
+      boxSizing: 'border-box'
+    },
+    inputPassword: {
+      width: '100%',
+      padding: '14px 48px 14px 44px',
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: '12px',
+      color: 'white',
+      fontSize: '14px',
+      outline: 'none',
+      transition: 'all 0.3s ease',
+      boxSizing: 'border-box'
+    },
+    eyeButton: {
+      position: 'absolute',
+      top: '50%',
+      right: '16px',
+      transform: 'translateY(-50%)',
+      background: 'none',
+      border: 'none',
+      color: '#6b7280',
+      cursor: 'pointer',
+      padding: '4px'
+    },
+    loginButton: {
+      width: '100%',
+      padding: '14px',
+      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+      border: 'none',
+      borderRadius: '12px',
+      color: 'white',
+      fontSize: '16px',
+      fontWeight: 700,
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      boxShadow: '0 4px 20px rgba(59,130,246,0.25)',
+      marginTop: '8px'
+    },
+    switchButton: {
+      width: '100%',
+      textAlign: 'center',
+      background: 'none',
+      border: 'none',
+      color: '#6b7280',
+      fontSize: '14px',
+      cursor: 'pointer',
+      padding: '12px',
+      transition: 'color 0.3s ease'
+    },
+    footer: {
+      textAlign: 'center',
+      color: '#4b5563',
+      fontSize: '10px',
+      letterSpacing: '0.2em',
+      marginTop: '24px'
+    },
+    toastContainer: {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      zIndex: 9999,
+      padding: '16px 24px',
+      borderRadius: '16px',
+      background: 'rgba(10,15,30,0.95)',
+      backdropFilter: 'blur(16px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+      maxWidth: '400px',
+      animation: 'slideIn 0.4s ease-out'
+    },
+    toastSuccess: {
+      borderLeft: '4px solid #34d399'
+    },
+    toastError: {
+      borderLeft: '4px solid #f43f5e'
+    },
+    toastInfo: {
+      borderLeft: '4px solid #3b82f6'
+    },
+    userBadge: {
+      background: 'rgba(59,130,246,0.1)',
+      border: '1px solid rgba(59,130,246,0.2)',
+      borderRadius: '12px',
+      padding: '16px',
+      textAlign: 'center',
+      marginBottom: '20px'
+    },
+    userLabel: {
+      color: '#6b7280',
+      fontSize: '10px',
+      marginBottom: '4px'
+    },
+    userName: {
+      color: '#60a5fa',
+      fontSize: '18px',
+      fontWeight: 700,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px'
+    },
+    dot: {
+      width: '8px',
+      height: '8px',
+      background: '#34d399',
+      borderRadius: '50%',
+      display: 'inline-block',
+      animation: 'pulse 2s infinite'
+    },
+    label: {
+      color: '#6b7280',
+      fontSize: '10px',
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.1em',
+      display: 'block',
+      marginBottom: '8px'
+    },
+    joinRow: {
+      display: 'flex',
+      gap: '8px'
+    },
+    joinInput: {
+      flex: 1,
+      padding: '12px 16px',
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: '12px',
+      color: 'white',
+      fontSize: '14px',
+      outline: 'none',
+      transition: 'all 0.3s ease'
+    },
+    joinButton: {
+      padding: '12px 24px',
+      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+      border: 'none',
+      borderRadius: '12px',
+      color: 'white',
+      fontWeight: 700,
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      boxShadow: '0 4px 20px rgba(59,130,246,0.2)',
+      whiteSpace: 'nowrap'
+    },
+    divider: {
+      position: 'relative',
+      padding: '16px 0',
+      textAlign: 'center'
+    },
+    dividerLine: {
+      position: 'absolute',
+      top: '50%',
+      left: 0,
+      right: 0,
+      height: '1px',
+      background: 'rgba(255,255,255,0.1)'
+    },
+    dividerText: {
+      position: 'relative',
+      display: 'inline-block',
+      background: '#0a0f1e',
+      padding: '0 12px',
+      color: '#4b5563',
+      fontSize: '10px',
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.1em'
+    },
+    createButton: {
+      width: '100%',
+      padding: '16px',
+      background: 'rgba(16,185,129,0.15)',
+      border: '1px solid rgba(16,185,129,0.3)',
+      borderRadius: '12px',
+      color: '#34d399',
+      fontWeight: 700,
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px'
+    },
+    logoutButton: {
+      width: '100%',
+      padding: '8px',
+      background: 'none',
+      border: 'none',
+      color: '#6b7280',
+      fontSize: '12px',
+      cursor: 'pointer',
+      transition: 'color 0.3s ease',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px',
+      marginTop: '16px',
+      borderTop: '1px solid rgba(255,255,255,0.05)',
+      paddingTop: '16px'
+    },
+    space: { marginTop: '16px' }
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Decorative Background Blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 blur-[120px] rounded-full"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-600/20 blur-[120px] rounded-full"></div>
+    <div style={styles.container}>
+      {/* Background */}
+      <div style={styles.bgBlur1}></div>
+      <div style={styles.bgBlur2}></div>
+      <div style={styles.bgBlur3}></div>
 
-      <div className="backdrop-blur-xl bg-white/5 p-8 rounded-3xl shadow-2xl w-full max-w-[400px] border border-white/10 relative z-10">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-emerald-500 mb-4 shadow-lg shadow-blue-500/20">
-            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      {/* Toast */}
+      {toast && (
+        <div style={{ ...styles.toastContainer, ...(toast.type === 'success' ? styles.toastSuccess : toast.type === 'error' ? styles.toastError : styles.toastInfo) }}>
+          <span style={{ color: 'white' }}>{toast.message}</span>
+        </div>
+      )}
+
+      <div style={styles.card}>
+        {/* Logo */}
+        <div style={styles.logoContainer}>
+          <div style={styles.logoBox}>
+            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+              <path d="M2 17l10 5 10-5"></path>
+              <path d="M2 12l10 5 10-5"></path>
             </svg>
           </div>
-          <h1 className="text-4xl font-black text-white mb-2 tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-            SecureChat
-          </h1>
-          <p className="text-gray-400 text-xs font-medium uppercase tracking-[0.2em]">Encrypted Collaboration</p>
+          <h1 style={styles.logoText}>NEXUS</h1>
+          <p style={styles.tagline}>Connect • Collaborate • Create</p>
         </div>
 
-        <div className="space-y-5">
-          {!isLoggedIn ? (
-            <>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500 group-focus-within:text-blue-500 transition-colors">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                />
+        {!isLoggedIn ? (
+          // Login/Signup
+          <div>
+            <div style={styles.inputWrapper}>
+              <div style={styles.inputIcon}>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
               </div>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500 group-focus-within:text-blue-500 transition-colors">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                </div>
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                />
+              <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                style={styles.input}
+                onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+              />
+            </div>
+
+            <div style={styles.inputWrapper}>
+              <div style={styles.inputIcon}>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
               </div>
-              <button
-                onClick={handleAuth}
-                disabled={loading}
-                className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-2xl text-white font-bold transition-all shadow-lg shadow-blue-500/25 active:scale-[0.98] disabled:opacity-50"
-              >
-                {loading ? 'Processing...' : (isSignup ? 'Create Account' : 'Sign In')}
-              </button>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={styles.inputPassword}
+                onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+              />
               <button
                 type="button"
-                className="w-full text-center text-sm text-gray-500 hover:text-white transition-colors py-2"
-                onClick={() => setIsSignup(!isSignup)}
+                onClick={() => setShowPassword(!showPassword)}
+                style={styles.eyeButton}
               >
-                {isSignup ? "Already a member? Login" : "New here? Create an account"}
+                {showPassword ? '👁️' : '👁️‍🗨️'}
               </button>
-            </>
-          ) : (
-            <>
-              <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-2xl mb-4 text-center">
-                <p className="text-gray-400 text-xs mb-1">Authenticated as</p>
-                <p className="text-blue-400 font-bold text-lg">{localStorage.getItem('username')}</p>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] text-gray-500 uppercase font-bold ml-1 tracking-widest">Join Existing Room</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Enter Room ID"
-                      value={roomId}
-                      onChange={(e) => setRoomId(e.target.value)}
-                      className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-all text-sm"
-                    />
-                    <button onClick={joinRoom} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-2xl text-white font-bold transition-all active:scale-95 shadow-lg shadow-blue-600/20">
-                      Join
-                    </button>
-                  </div>
-                </div>
+            </div>
 
-                <div className="relative py-4">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-                  <div className="relative flex justify-center text-[10px] uppercase tracking-widest text-gray-600 font-bold"><span className="bg-[#161f31] px-2">Or</span></div>
-                </div>
+            <button
+              onClick={handleAuth}
+              disabled={loading}
+              style={{
+                ...styles.loginButton,
+                opacity: loading ? 0.5 : 1,
+                cursor: loading ? 'not-allowed' : 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) {
+                  e.target.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) {
+                  e.target.style.background = 'linear-gradient(135deg, #3b82f6, #8b5cf6)';
+                }
+              }}
+            >
+              {loading ? (
+                <span>⏳ Processing...</span>
+              ) : (
+                isSignup ? '🚀 Create Account' : '✨ Sign In'
+              )}
+            </button>
 
-                <button onClick={createRoom} className="w-full py-4 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-600/30 rounded-2xl text-emerald-400 font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"></path></svg>
-                  Create Private Space
-                </button>
-              </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignup(!isSignup);
+                setPassword('');
+              }}
+              style={styles.switchButton}
+              onMouseEnter={(e) => e.target.style.color = 'white'}
+              onMouseLeave={(e) => e.target.style.color = '#6b7280'}
+            >
+              {isSignup ? 'Already a member? Login' : 'New here? Create an account'}
+            </button>
+          </div>
+        ) : (
+          // Dashboard
+          <div>
+            <div style={styles.userBadge}>
+              <p style={styles.userLabel}>Authenticated as</p>
+              <p style={styles.userName}>
+                <span style={styles.dot}></span>
+                {localStorage.getItem('username')}
+              </p>
+            </div>
 
-              <div className="pt-6">
+            <div>
+              <label style={styles.label}>Join Existing Room</label>
+              <div style={styles.joinRow}>
+                <input
+                  type="text"
+                  placeholder="Enter Room ID"
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value)}
+                  style={styles.joinInput}
+                  onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
+                  onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                />
                 <button 
-                  onClick={handleLogout} 
-                  className="w-full py-2 text-gray-500 text-xs hover:text-red-400 transition-colors flex items-center justify-center gap-1 group"
+                  onClick={joinRoom} 
+                  style={styles.joinButton}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'linear-gradient(135deg, #3b82f6, #8b5cf6)';
+                  }}
                 >
-                  <svg className="group-hover:translate-x-[-2px] transition-transform" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path></svg>
-                  Sign out from device
+                  Join
                 </button>
               </div>
-            </>
-          )}
-        </div>
+            </div>
+
+            <div style={styles.divider}>
+              <div style={styles.dividerLine}></div>
+              <span style={styles.dividerText}>Or</span>
+            </div>
+
+            <button 
+              onClick={createRoom} 
+              style={styles.createButton}
+              onMouseEnter={(e) => {
+                e.target.style.background = 'rgba(16,185,129,0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = 'rgba(16,185,129,0.15)';
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M12 5v14M5 12h14"></path>
+              </svg>
+              Create Private Space
+            </button>
+
+            <button 
+              onClick={handleLogout} 
+              style={styles.logoutButton}
+              onMouseEnter={(e) => e.target.style.color = '#f43f5e'}
+              onMouseLeave={(e) => e.target.style.color = '#6b7280'}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path>
+              </svg>
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* <p style={styles.footer}>🔒 End-to-End Encrypted · v2.0</p> */}
     </div>
   );
 }

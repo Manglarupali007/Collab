@@ -9,7 +9,7 @@ const cron = require('node-cron');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Increased for image sharing
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const server = http.createServer(app);
@@ -20,14 +20,14 @@ const io = socketIo(server, {
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     methods: ["GET", "POST"]
   },
-  maxHttpBufferSize: 1e8 // 100MB buffer for file transfers
+  maxHttpBufferSize: 1e8
 });
 
-// Data store in memory (without database)
+// Data store
 const rooms = new Map();
-const users = new Map(); // username -> { password, id }
+const users = new Map();
 
-// Background task to send scheduled messages
+// Scheduled messages
 cron.schedule('* * * * *', () => {
   const now = new Date();
   rooms.forEach((room, roomId) => {
@@ -46,17 +46,24 @@ cron.schedule('* * * * *', () => {
   });
 });
 
-// Auth Middleware for Sockets
+// Socket Auth
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('Authentication error'));
+  if (!token) {
+    console.log("❌ No token provided");
+    return next(new Error('Authentication error'));
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     socket.username = decoded.username;
+    console.log(`✅ Socket authenticated: ${socket.username}`);
     next();
   } catch (err) {
-    console.error("Socket Auth Failed:", err.message);
-    const error = new Error(err.name === 'TokenExpiredError' ? 'jwt expired' : 'Authentication error');
+    console.error("❌ Socket Auth Failed:", err.message);
+    if (err.name === 'TokenExpiredError') {
+      return next(new Error('Session expired. Please login again.'));
+    }
+    const error = new Error('Authentication error');
     next(error);
   }
 });
@@ -87,7 +94,7 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
@@ -101,7 +108,7 @@ io.on('connection', (socket) => {
     if (!rooms.has(roomId)) {
       rooms.set(roomId, {
         users: new Map(),
-        password: password, // Store the password for the room
+        password: password,
         messages: [],
         pinnedMessages: [],
         tasks: [],
@@ -112,7 +119,6 @@ io.on('connection', (socket) => {
     
     const room = rooms.get(roomId);
 
-    // Security Check: Verify password
     if (room.password && room.password !== password) {
       socket.emit('error', 'Invalid room password');
       return;
@@ -120,11 +126,16 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
     
-    // RBAC: First person is ADMIN, others are MEMBER by default
     const role = room.users.size === 0 ? 'ADMIN' : 'MEMBER';
-    room.users.set(socket.id, { username: socket.username, id: socket.id, role, status: 'online' });
+    room.users.set(socket.id, { 
+      username: socket.username, 
+      id: socket.id, 
+      role, 
+      status: 'online',
+      avatar: null,
+      bio: ''
+    });
     
-    // Send chat history to the newly joined user
     socket.emit('message-history', room.messages);
     socket.emit('pinned-history', room.pinnedMessages);
 
@@ -155,20 +166,138 @@ io.on('connection', (socket) => {
   socket.on('send-message', ({ roomId, username, text, image, poll, time, id }) => {
     const room = rooms.get(roomId);
     if (room) {
+      const messageId = id || (Date.now() + Math.random().toString(36).substr(2, 9));
+      
+      const existing = room.messages.find(m => m.id === messageId);
+      if (existing) {
+        return;
+      }
+      
       const messageData = { 
-        id: id || (Date.now() + Math.random().toString(36).substr(2, 9)), 
+        id: messageId,
         username, 
         text, 
-        image, // New: support for base64 images
+        image,
         poll,
         reactions: {}, 
-        time 
+        time,
+        readBy: [],
+        readCount: 0,
+        edited: false,
+        replyTo: null
       };
       room.messages.push(messageData);
-      socket.to(roomId).emit('receive-message', messageData);
+      io.to(roomId).emit('receive-message', messageData);
     }
   });
 
+  // ========== REPLY TO MESSAGE ==========
+  socket.on('reply-to-message', ({ roomId, messageId, replyText, username, time }) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      const originalMsg = room.messages.find(m => m.id === messageId);
+      if (originalMsg) {
+        const replyData = {
+          id: `reply-${Date.now()}`,
+          username,
+          text: replyText,
+          time,
+          readBy: [],
+          readCount: 0,
+          edited: false,
+          replyTo: {
+            id: originalMsg.id,
+            username: originalMsg.username,
+            text: originalMsg.text.substring(0, 100) + (originalMsg.text.length > 100 ? '...' : '')
+          }
+        };
+        room.messages.push(replyData);
+        io.to(roomId).emit('receive-message', replyData);
+      }
+    }
+  });
+
+  // ========== FILE SHARING ==========
+  socket.on('share-file', ({ roomId, username, fileName, fileData, fileType, fileSize, time }) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      const fileMessage = {
+        id: `file-${Date.now()}`,
+        username,
+        text: `📎 ${fileName}`,
+        file: {
+          name: fileName,
+          data: fileData,
+          type: fileType,
+          size: fileSize
+        },
+        time,
+        reactions: {},
+        readBy: [],
+        readCount: 0,
+        edited: false,
+        replyTo: null
+      };
+      room.messages.push(fileMessage);
+      io.to(roomId).emit('receive-message', fileMessage);
+    }
+  });
+
+  // ========== EDIT MESSAGE ==========
+  socket.on('edit-message', ({ roomId, messageId, newText }) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      const msg = room.messages.find(m => m.id === messageId);
+      if (msg && msg.username === socket.username) {
+        msg.text = newText;
+        msg.edited = true;
+        msg.editedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        io.to(roomId).emit('message-edited', { messageId, newText, editedAt: msg.editedAt });
+        
+        const pinnedMsg = room.pinnedMessages.find(m => m.id === messageId);
+        if (pinnedMsg) {
+          pinnedMsg.text = newText;
+          io.to(roomId).emit('pinned-history', room.pinnedMessages);
+        }
+      }
+    }
+  });
+
+  // ========== READ RECEIPTS ==========
+  socket.on('message-read', ({ roomId, messageId }) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      const msg = room.messages.find(m => m.id === messageId);
+      if (msg) {
+        if (!msg.readBy) msg.readBy = [];
+        if (!msg.readBy.includes(socket.username)) {
+          msg.readBy.push(socket.username);
+          msg.readCount = msg.readBy.length;
+          io.to(roomId).emit('read-receipt', { 
+            messageId, 
+            readBy: msg.readBy,
+            readCount: msg.readCount
+          });
+        }
+      }
+    }
+  });
+
+  // ========== UPDATE PROFILE ==========
+  socket.on('update-profile', ({ roomId, avatar, bio }) => {
+    const room = rooms.get(roomId);
+    if (room && room.users.has(socket.id)) {
+      const user = room.users.get(socket.id);
+      if (avatar !== undefined) user.avatar = avatar;
+      if (bio !== undefined) user.bio = bio;
+      io.to(roomId).emit('user-joined', { 
+        users: Array.from(room.users.values()), 
+        userId: null 
+      });
+    }
+  });
+
+  // ========== ADD REACTION ==========
   socket.on('add-reaction', ({ roomId, messageId, emoji }) => {
     const room = rooms.get(roomId);
     if (room) {
@@ -180,18 +309,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ========== VOTE ==========
   socket.on('vote', ({ roomId, messageId, optionIndex }) => {
     const room = rooms.get(roomId);
     if (room) {
       const pollMsg = room.messages.find(m => m.id === messageId);
       if (pollMsg && pollMsg.poll) {
         pollMsg.poll.options[optionIndex].votes += 1;
-        // Broadcast updated poll to everyone
         io.to(roomId).emit('update-poll', { messageId, poll: pollMsg.poll });
       }
     }
   });
 
+  // ========== SCHEDULE MESSAGE ==========
   socket.on('schedule-message', ({ roomId, msgData }) => {
     const room = rooms.get(roomId);
     if (room) {
@@ -200,6 +330,7 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ========== CREATE TASK ==========
   socket.on('create-task', ({ roomId, task }) => {
     const room = rooms.get(roomId);
     if (room) {
@@ -209,6 +340,7 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ========== UPDATE TASK STATUS ==========
   socket.on('update-task-status', ({ roomId, taskId, newStatus }) => {
     const room = rooms.get(roomId);
     if (room) {
@@ -217,34 +349,81 @@ io.on('connection', (socket) => {
     }
   });
 
-  // WebRTC Signaling for Video Calls
-  socket.on('call-request', ({ roomId, signal, from }) => {
-    socket.to(roomId).emit('incoming-call', { signal, from });
-  });
-
-  socket.on('accept-call', ({ roomId, signal }) => {
-    socket.to(roomId).emit('call-accepted', signal);
-  });
-
+  // ========== PIN MESSAGE ==========
   socket.on('pin-message', ({ roomId, messageId }) => {
+    console.log(`📌 Pin request: room=${roomId}, messageId=${messageId}, user=${socket.username}`);
+    
     const room = rooms.get(roomId);
-    const user = room?.users.get(socket.id);
-    if (room && (user.role === 'ADMIN' || user.role === 'MANAGER')) {
-      const message = room.messages.find(m => m.id === messageId);
-      if (message && !room.pinnedMessages.find(m => m.id === messageId)) {
-        room.pinnedMessages.push(message);
-        io.to(roomId).emit('pinned-history', room.pinnedMessages);
-      }
+    if (!room) {
+      console.log('❌ Room not found');
+      socket.emit('error', 'Room not found');
+      return;
     }
+    
+    const user = room.users.get(socket.id);
+    if (!user) {
+      console.log('❌ User not found in room');
+      socket.emit('error', 'User not found');
+      return;
+    }
+    
+    if (user.role !== 'ADMIN' && user.role !== 'MANAGER') {
+      console.log(`❌ User ${socket.username} (${user.role}) not authorized to pin`);
+      socket.emit('error', 'You need ADMIN or MANAGER role to pin messages');
+      return;
+    }
+    
+    const message = room.messages.find(m => m.id === messageId);
+    if (!message) {
+      console.log('❌ Message not found');
+      socket.emit('error', 'Message not found');
+      return;
+    }
+    
+    const alreadyPinned = room.pinnedMessages.find(m => m.id === messageId);
+    if (alreadyPinned) {
+      console.log('ℹ️ Message already pinned');
+      socket.emit('notification', 'Message already pinned');
+      return;
+    }
+    
+    const pinnedMessage = { 
+      ...message, 
+      pinnedAt: new Date().toISOString(),
+      pinnedBy: socket.username
+    };
+    room.pinnedMessages.push(pinnedMessage);
+    console.log(`✅ Message pinned by ${socket.username}. Total pinned: ${room.pinnedMessages.length}`);
+    
+    io.to(roomId).emit('pinned-history', room.pinnedMessages);
+    socket.emit('notification', '📌 Message pinned successfully!');
   });
 
+  // ========== UNPIN MESSAGE ==========
+  socket.on('unpin-message', ({ roomId, messageId }) => {
+    console.log(`📌 Unpin request: room=${roomId}, messageId=${messageId}`);
+    
+    const room = rooms.get(roomId);
+    if (!room) return;
+    
+    const user = room.users.get(socket.id);
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'MANAGER')) {
+      socket.emit('error', 'Not authorized');
+      return;
+    }
+    
+    room.pinnedMessages = room.pinnedMessages.filter(m => m.id !== messageId);
+    io.to(roomId).emit('pinned-history', room.pinnedMessages);
+    socket.emit('notification', '📌 Message unpinned!');
+  });
+
+  // ========== DELETE MESSAGE ==========
   socket.on('delete-message', ({ roomId, messageId }) => {
     const room = rooms.get(roomId);
     if (room) {
       const message = room.messages.find(msg => msg.id === messageId);
       const user = room.users.get(socket.id);
       
-      // RBAC Authorization: Author, Admin, or Manager can delete
       const canDelete = message && (
         message.username === socket.username || 
         user.role === 'ADMIN' || 
@@ -252,10 +431,8 @@ io.on('connection', (socket) => {
       );
 
       if (canDelete) {
-        // Filter out the message from history
         room.messages = room.messages.filter(msg => msg.id !== messageId);
         room.pinnedMessages = room.pinnedMessages.filter(msg => msg.id !== messageId);
-        // Notify everyone in the room to remove it from their UI
         io.to(roomId).emit('message-deleted', messageId);
         io.to(roomId).emit('pinned-history', room.pinnedMessages);
       } else {
@@ -264,10 +441,10 @@ io.on('connection', (socket) => {
     }
   });
   
+  // ========== KICK USER ==========
   socket.on('kick-user', ({ roomId, userIdToKick }) => {
     const room = rooms.get(roomId);
     const requester = room?.users.get(socket.id);
-    // RBAC: Only ADMIN or MANAGER can kick
     if (room && (requester.role === 'ADMIN' || requester.role === 'MANAGER')) {
       const userToKick = io.sockets.sockets.get(userIdToKick);
       if (userToKick) {
@@ -275,14 +452,22 @@ io.on('connection', (socket) => {
         userToKick.leave(roomId);
         const userData = room.users.get(userIdToKick);
         room.users.delete(userIdToKick);
-        // Notify others
         io.to(roomId).emit('user-left', { userId: userIdToKick, username: userData?.username });
-        // Refresh user list for everyone without triggering a "joined" message
         io.to(roomId).emit('user-joined', { users: Array.from(room.users.values()), userId: null });
       }
     }
   });
 
+  // ========== CALL ==========
+  socket.on('call-request', ({ roomId, signal, from }) => {
+    socket.to(roomId).emit('incoming-call', { signal, from });
+  });
+
+  socket.on('accept-call', ({ roomId, signal }) => {
+    socket.to(roomId).emit('call-accepted', signal);
+  });
+
+  // ========== DISCONNECT ==========
   socket.on('disconnect', () => {
     for (const [roomId, room] of rooms.entries()) {
       if (room.users.has(socket.id)) {
@@ -293,7 +478,6 @@ io.on('connection', (socket) => {
         if (room.users.size === 0) {
           rooms.delete(roomId);
         } else if (userData?.role === 'ADMIN' && room.users.size > 0) {
-          // Promote next user to ADMIN if current admin leaves
           const nextAdminId = room.users.keys().next().value;
           const nextAdmin = room.users.get(nextAdminId);
           if (nextAdmin) nextAdmin.role = 'ADMIN';
