@@ -1,7 +1,6 @@
 {
-  "name": "collab-backend",
+  "name": "nexus-backend",
   "version": "2.0.0",
-  "description": "Collab - Real-time Collaboration Platform",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -8,20 +8,53 @@ const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
 
 const app = express();
-app.use(cors());
+
+// ======================================================
+// ✅ CORS UPDATE
+// ======================================================
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://nexus-collab.vercel.app',
+    'https://nexus-frontend.vercel.app',
+    'https://collab-1-po9t.onrender.com',
+    'https://*.vercel.app',
+    'https://*.onrender.com'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with']
+};
+
+app.use(cors(corsOptions));
+// ======================================================
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const server = http.createServer(app);
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 
+// ======================================================
+// ✅ SOCKET.IO CORS UPDATE
+// ======================================================
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://nexus-collab.vercel.app',
+      'https://nexus-frontend.vercel.app',
+      'https://*.vercel.app',
+      'https://*.onrender.com'
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
   },
   maxHttpBufferSize: 1e8
 });
+// ======================================================
 
 // Data store
 const rooms = new Map();

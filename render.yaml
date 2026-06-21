@@ -1,0 +1,13 @@
+# render.yaml - Root folder mein
+services:
+  - type: web
+    name: nexus-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node backend/server.js
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://nexus-collab.vercel.app
+    plan: free
