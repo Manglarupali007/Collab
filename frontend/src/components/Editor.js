@@ -177,9 +177,9 @@ function Editor() {
       }
     });
 
-   return () => {
-  const messageIds = receivedMessageIds.current;
+ const messageIds = receivedMessageIds.current;
 
+return () => {
   socket.removeAllListeners();
 
   if (typingTimeoutRef.current) {
