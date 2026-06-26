@@ -177,12 +177,18 @@ function Editor() {
       }
     });
 
-    return () => {
-      socket.removeAllListeners();
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      socket.disconnect();
-      receivedMessageIds.current.clear();
-    };
+   return () => {
+  const messageIds = receivedMessageIds.current;
+
+  socket.removeAllListeners();
+
+  if (typingTimeoutRef.current) {
+    clearTimeout(typingTimeoutRef.current);
+  }
+
+  socket.disconnect();
+  messageIds.clear();
+};
   }, [roomId, username, password, navigate]);
 
   useEffect(() => {
