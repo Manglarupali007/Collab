@@ -27,4 +27,4 @@ Nexus is a modern real-time chat application that enables users to communicate i
 
 ## 🚀 Live Demo
 
-Frontend: https:collab-three-lime.vercel.app
+Frontend: https://collab-three-lime.vercel.app
