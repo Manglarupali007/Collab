@@ -12,22 +12,37 @@ const app = express();
 // ======================================================
 // ✅ CORS UPDATE
 // ======================================================
-const corsOptions = {
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://nexus-collab.vercel.app',
-    'https://nexus-frontend.vercel.app',
-    'https://collab-1-po9t.onrender.com',
-    'https://*.vercel.app',
-    'https://*.onrender.com'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with']
-};
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://collab-three-lime.vercel.app",
+  "https://collab-git-main-rupali-manglas-projects.vercel.app",
+  "https://collab-mfpru4651-rupali-manglas-projects.vercel.app"
+];
 
-app.use(cors(corsOptions));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-requested-with",
+    ],
+  })
+);
 // ======================================================
 
 app.use(express.json({ limit: '50mb' }));
@@ -41,18 +56,22 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_dev_only';
 // ======================================================
 const io = socketIo(server, {
   cors: {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://nexus-collab.vercel.app',
-      'https://nexus-frontend.vercel.app',
-      'https://*.vercel.app',
-      'https://*.onrender.com'
-    ],
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
   },
-  maxHttpBufferSize: 1e8
+  maxHttpBufferSize: 1e8,
 });
 // ======================================================
 
