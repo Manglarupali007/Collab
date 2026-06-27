@@ -31,22 +31,11 @@ function Editor() {
   const [avatar, setAvatar] = useState('');
   const [bio, setBio] = useState('');
   const [toast, setToast] = useState(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   
   const chatEndRef = useRef(null);
   const emojiPickerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const receivedMessageIds = useRef(new Set());
-
-  // Handle window resize for responsive
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -188,16 +177,18 @@ function Editor() {
       }
     });
 
-    const messageIds = receivedMessageIds.current;
+ const messageIds = receivedMessageIds.current;
 
-    return () => {
-      socket.removeAllListeners();
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      socket.disconnect();
-      messageIds.clear();
-    };
+return () => {
+  socket.removeAllListeners();
+
+  if (typingTimeoutRef.current) {
+    clearTimeout(typingTimeoutRef.current);
+  }
+
+  socket.disconnect();
+  messageIds.clear();
+};
   }, [roomId, username, password, navigate]);
 
   useEffect(() => {
@@ -461,10 +452,6 @@ function Editor() {
     }
   };
 
-  const toggleMobileSidebar = () => {
-    setShowMobileSidebar(!showMobileSidebar);
-  };
-
   const renderMessageText = (text) => {
     if (!text) return "";
     const parts = text.split(/(@\w+|https?:\/\/[^\s]+)/g);
@@ -511,11 +498,8 @@ function Editor() {
     msg.username?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // ===== RESPONSIVE STYLES =====
-  const isMobileDevice = window.innerWidth < 768;
-
-  const styles = {
-    container: {
+  return (
+    <div style={{
       height: '100vh',
       background: '#0a0f1e',
       display: 'flex',
@@ -523,310 +507,7 @@ function Editor() {
       color: '#f1f5f9',
       fontFamily: 'Inter, sans-serif',
       overflow: 'hidden'
-    },
-    navbar: {
-      background: 'rgba(10,15,30,0.85)',
-      backdropFilter: 'blur(16px)',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
-      padding: isMobileDevice ? '10px 12px' : '16px 24px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      zIndex: 20,
-      boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-      flexShrink: 0
-    },
-    navbarLeft: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: isMobileDevice ? '10px' : '16px',
-      minWidth: 0
-    },
-    logoBox: {
-      width: isMobileDevice ? '32px' : '40px',
-      height: isMobileDevice ? '32px' : '40px',
-      borderRadius: '12px',
-      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontWeight: 'bold',
-      fontSize: isMobileDevice ? '14px' : '18px',
-      boxShadow: '0 4px 20px rgba(59,130,246,0.2)',
-      flexShrink: 0
-    },
-    roomInfo: {
-      display: 'flex',
-      flexDirection: 'column',
-      minWidth: 0
-    },
-    roomTitle: {
-      fontWeight: 700,
-      fontSize: isMobileDevice ? '12px' : '14px',
-      letterSpacing: '-0.025em',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-      flexWrap: 'wrap'
-    },
-    onlineBadge: {
-      fontSize: isMobileDevice ? '8px' : '10px',
-      background: 'rgba(52,211,153,0.2)',
-      color: '#34d399',
-      padding: '2px 8px',
-      borderRadius: '20px',
-      fontWeight: 'normal',
-      whiteSpace: 'nowrap'
-    },
-    roomSubtitle: {
-      fontSize: isMobileDevice ? '9px' : '11px',
-      color: '#6b7280'
-    },
-    navbarRight: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: isMobileDevice ? '6px' : '12px',
-      flexShrink: 0
-    },
-    searchInput: {
-      display: isMobileDevice ? 'none' : 'block',
-      background: 'rgba(255,255,255,0.05)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: '12px',
-      padding: '8px 16px',
-      fontSize: '12px',
-      color: 'white',
-      outline: 'none',
-      width: isMobileDevice ? '100px' : '180px',
-      transition: 'all 0.3s ease'
-    },
-    avatarBtn: {
-      width: isMobileDevice ? '28px' : '36px',
-      height: isMobileDevice ? '28px' : '36px',
-      borderRadius: '50%',
-      background: '#1e293b',
-      border: '1px solid rgba(255,255,255,0.08)',
-      color: 'white',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontWeight: 700,
-      fontSize: isMobileDevice ? '10px' : '14px',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      overflow: 'hidden',
-      flexShrink: 0
-    },
-    inviteBtn: {
-      background: '#3b82f6',
-      border: 'none',
-      borderRadius: '10px',
-      padding: isMobileDevice ? '4px 10px' : '8px 16px',
-      color: 'white',
-      fontSize: isMobileDevice ? '10px' : '12px',
-      fontWeight: 600,
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      boxShadow: '0 4px 20px rgba(59,130,246,0.2)',
-      whiteSpace: 'nowrap'
-    },
-    exitBtn: {
-      background: 'rgba(244,63,94,0.1)',
-      border: '1px solid rgba(244,63,94,0.2)',
-      borderRadius: '10px',
-      padding: isMobileDevice ? '4px 10px' : '8px 16px',
-      color: '#f43f5e',
-      fontSize: isMobileDevice ? '10px' : '12px',
-      fontWeight: 600,
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      whiteSpace: 'nowrap'
-    },
-    mainArea: {
-      display: 'flex',
-      flex: 1,
-      overflow: 'hidden',
-      flexDirection: isMobileDevice ? 'column' : 'row'
-    },
-    leftSidebar: {
-      display: isMobileDevice ? (showMobileSidebar ? 'flex' : 'none') : 'flex',
-      width: isMobileDevice ? '100%' : '200px',
-      maxHeight: isMobileDevice ? '50%' : '100%',
-      background: '#0a0f1e',
-      borderRight: isMobileDevice ? 'none' : '1px solid rgba(255,255,255,0.05)',
-      borderBottom: isMobileDevice ? '1px solid rgba(255,255,255,0.05)' : 'none',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      position: isMobileDevice ? 'absolute' : 'relative',
-      top: isMobileDevice ? 0 : 'auto',
-      left: 0,
-      right: 0,
-      zIndex: 50,
-      background: isMobileDevice ? 'rgba(10,15,30,0.98)' : '#0a0f1e',
-      backdropFilter: isMobileDevice ? 'blur(20px)' : 'none'
-    },
-    chatArea: {
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      background: '#0a0f1e'
-    },
-    chatMessages: {
-      flex: 1,
-      overflowY: 'auto',
-      padding: isMobileDevice ? '10px' : '16px'
-    },
-    chatInner: {
-      maxWidth: '1024px',
-      margin: '0 auto',
-      paddingTop: isMobileDevice ? '8px' : '16px'
-    },
-    rightSidebar: {
-      width: isMobileDevice ? '100%' : '280px',
-      maxHeight: isMobileDevice ? '200px' : '100%',
-      background: '#0a0f1e',
-      borderLeft: isMobileDevice ? 'none' : '1px solid rgba(255,255,255,0.05)',
-      borderTop: isMobileDevice ? '1px solid rgba(255,255,255,0.05)' : 'none',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      flexShrink: 0,
-      position: isMobileDevice ? 'relative' : 'static'
-    },
-    inputArea: {
-      background: 'rgba(10,15,30,0.85)',
-      backdropFilter: 'blur(16px)',
-      borderTop: '1px solid rgba(255,255,255,0.06)',
-      padding: isMobileDevice ? '8px 10px' : '12px 16px',
-      display: 'flex',
-      flexDirection: 'column',
-      zIndex: 10,
-      flexShrink: 0
-    },
-    inputForm: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: isMobileDevice ? '4px' : '8px',
-      maxWidth: '1024px',
-      margin: '0 auto',
-      width: '100%'
-    },
-    messageInput: {
-      flex: 1,
-      background: 'rgba(255,255,255,0.06)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: isMobileDevice ? '20px' : '24px',
-      padding: isMobileDevice ? '8px 14px' : '12px 20px',
-      fontSize: isMobileDevice ? '13px' : '14px',
-      color: 'white',
-      outline: 'none',
-      transition: 'all 0.3s ease',
-      minWidth: isMobileDevice ? '60px' : '100px'
-    },
-    sendBtn: {
-      background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-      border: 'none',
-      borderRadius: '50%',
-      padding: isMobileDevice ? '8px' : '12px',
-      color: 'white',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      boxShadow: '0 4px 20px rgba(59,130,246,0.3)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: isMobileDevice ? '36px' : '48px',
-      height: isMobileDevice ? '36px' : '48px',
-      flexShrink: 0
-    },
-    inputBtn: {
-      background: 'none',
-      border: 'none',
-      color: '#6b7280',
-      padding: isMobileDevice ? '4px' : '8px',
-      borderRadius: '10px',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: isMobileDevice ? '28px' : '40px',
-      height: isMobileDevice ? '28px' : '40px',
-      flexShrink: 0
-    },
-    messageBubble: {
-      padding: isMobileDevice ? '10px 14px' : '12px 16px',
-      borderRadius: '16px',
-      position: 'relative',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-      minWidth: '50px',
-      maxWidth: isMobileDevice ? '90%' : '75%'
-    },
-    msgText: {
-      fontSize: isMobileDevice ? '13px' : '14px',
-      lineHeight: 1.6,
-      paddingRight: isMobileDevice ? '20px' : '32px'
-    },
-    smartReplies: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: isMobileDevice ? '4px' : '8px',
-      marginBottom: '8px',
-      marginLeft: isMobileDevice ? '0' : '48px'
-    },
-    smartReplyBtn: {
-      background: 'rgba(59,130,246,0.1)',
-      border: '1px solid rgba(59,130,246,0.2)',
-      borderRadius: '20px',
-      padding: isMobileDevice ? '2px 10px' : '4px 14px',
-      fontSize: isMobileDevice ? '9px' : '10px',
-      color: '#60a5fa',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      fontWeight: 700
-    },
-    mobileToggleBtn: {
-      display: isMobileDevice ? 'flex' : 'none',
-      background: 'none',
-      border: 'none',
-      color: '#6b7280',
-      fontSize: '20px',
-      cursor: 'pointer',
-      padding: '4px'
-    },
-    mobileNav: {
-      display: isMobileDevice ? 'flex' : 'none',
-      position: 'fixed',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      background: 'rgba(10,15,30,0.95)',
-      backdropFilter: 'blur(16px)',
-      borderTop: '1px solid rgba(255,255,255,0.06)',
-      zIndex: 100,
-      padding: '6px 0',
-      justifyContent: 'space-around'
-    },
-    mobileNavBtn: {
-      background: 'none',
-      border: 'none',
-      color: '#6b7280',
-      padding: '4px 10px',
-      cursor: 'pointer',
-      transition: 'all 0.3s',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: '2px',
-      fontSize: '8px',
-      textTransform: 'uppercase',
-      letterSpacing: '0.05em'
-    }
-  };
-
-  return (
-    <div style={styles.container}>
+    }}>
       {/* Toast */}
       {toast && (
         <div style={{
@@ -849,40 +530,90 @@ function Editor() {
       )}
 
       {/* Navbar */}
-      <div style={styles.navbar}>
-        <div style={styles.navbarLeft}>
-          <div style={styles.logoBox}>#</div>
-          <div style={styles.roomInfo}>
-            <div style={styles.roomTitle}>
-              {isMobileDevice ? 'Room' : `Private Room: ${roomId}`}
-              <span style={styles.onlineBadge}>{users.length} online</span>
+      <div style={{
+        background: 'rgba(10,15,30,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        padding: '16px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 20,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.3)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 'bold',
+            fontSize: '18px',
+            boxShadow: '0 4px 20px rgba(59,130,246,0.2)'
+          }}>#</div>
+          <div>
+            <div style={{
+              fontWeight: 700,
+              fontSize: '14px',
+              letterSpacing: '-0.025em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              Private Room: {roomId}
+              <span style={{
+                fontSize: '10px',
+                background: 'rgba(52,211,153,0.2)',
+                color: '#34d399',
+                padding: '2px 10px',
+                borderRadius: '20px',
+                fontWeight: 'normal'
+              }}>{users.length} online</span>
             </div>
-            <div style={styles.roomSubtitle}>{users.length} members • {chat.length} messages</div>
+            <div style={{ fontSize: '11px', color: '#6b7280' }}>{users.length} members • {chat.length} messages</div>
           </div>
         </div>
-        <div style={styles.navbarRight}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <input
             type="text"
-            placeholder="🔍 Search..."
-            style={styles.searchInput}
+            placeholder="🔍 Search messages..."
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              color: 'white',
+              outline: 'none',
+              width: '180px',
+              transition: 'all 0.3s ease'
+            }}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
             onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
           />
-          
-          {/* Mobile Menu Toggle */}
-          <button
-            onClick={toggleMobileSidebar}
-            style={styles.mobileToggleBtn}
-            title="Toggle users"
-          >
-            👥
-          </button>
-
           <button
             onClick={() => setShowProfileModal(true)}
-            style={styles.avatarBtn}
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              background: '#1e293b',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              overflow: 'hidden'
+            }}
             onMouseEnter={(e) => e.target.style.background = '#334155'}
             onMouseLeave={(e) => e.target.style.background = '#1e293b'}
           >
@@ -894,27 +625,55 @@ function Editor() {
           </button>
           <button
             onClick={copyRoomId}
-            style={styles.inviteBtn}
+            style={{
+              background: '#3b82f6',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 20px rgba(59,130,246,0.2)'
+            }}
             onMouseEnter={(e) => e.target.style.background = '#2563eb'}
             onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
           >
-            {isMobileDevice ? '🔗' : '🔗 Invite'}
+            🔗 Invite
           </button>
           <button
             onClick={leaveRoom}
-            style={styles.exitBtn}
+            style={{
+              background: 'rgba(244,63,94,0.1)',
+              border: '1px solid rgba(244,63,94,0.2)',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              color: '#f43f5e',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.3s ease'
+            }}
             onMouseEnter={(e) => { e.target.style.background = 'rgba(244,63,94,0.2)'; }}
             onMouseLeave={(e) => { e.target.style.background = 'rgba(244,63,94,0.1)'; }}
           >
-            {isMobileDevice ? '✕' : '⚡ Exit'}
+            ⚡ Exit
           </button>
         </div>
       </div>
 
       {/* Main Area */}
-      <div style={styles.mainArea}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left Sidebar */}
-        <div style={styles.leftSidebar}>
+        <div style={{
+          width: '256px',
+          background: '#0a0f1e',
+          borderRight: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
           <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             <select
               style={{
@@ -933,22 +692,6 @@ function Editor() {
               <option value="away">🟡 Away</option>
               <option value="busy">🔴 Busy</option>
             </select>
-            {isMobileDevice && (
-              <button
-                onClick={toggleMobileSidebar}
-                style={{
-                  float: 'right',
-                  background: 'none',
-                  border: 'none',
-                  color: '#6b7280',
-                  fontSize: '18px',
-                  cursor: 'pointer',
-                  marginTop: '-28px'
-                }}
-              >
-                ✕
-              </button>
-            )}
           </div>
           <div style={{
             padding: '16px',
@@ -968,15 +711,15 @@ function Editor() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
-                  padding: '10px 12px',
-                  borderRadius: '12px',
+                  padding: '12px',
+                  borderRadius: '16px',
                   transition: 'all 0.3s ease',
                   cursor: 'default'
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <div style={{ position: 'relative', width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, overflow: 'hidden' }}>
+                <div style={{ position: 'relative', width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, overflow: 'hidden' }}>
                   {user.avatar ? (
                     <img src={user.avatar} alt={user.username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
@@ -986,20 +729,20 @@ function Editor() {
                     position: 'absolute',
                     bottom: '-4px',
                     right: '-4px',
-                    width: '12px',
-                    height: '12px',
+                    width: '14px',
+                    height: '14px',
                     borderRadius: '50%',
                     border: '2px solid #0a0f1e',
                     background: getStatusColor(user.status)
                   }}></div>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {user.username} {user.username === username && <span style={{ fontSize: '7px', color: '#60a5fa' }}>(You)</span>}
+                  <div style={{ fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {user.username} {user.username === username && <span style={{ fontSize: '8px', color: '#60a5fa' }}>(You)</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{
-                      fontSize: '7px',
+                      fontSize: '8px',
                       fontWeight: 900,
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
@@ -1007,18 +750,18 @@ function Editor() {
                     }}>
                       {user.role}
                     </span>
-                    {user.bio && <span style={{ fontSize: '7px', color: '#4b5563' }}>· {user.bio}</span>}
+                    {user.bio && <span style={{ fontSize: '8px', color: '#4b5563' }}>· {user.bio}</span>}
                   </div>
                 </div>
                 {isStaff && user.username !== username && (
                   <button
                     onClick={() => kickUser(user.id)}
                     style={{
-                      fontSize: '8px',
+                      fontSize: '9px',
                       background: 'rgba(244,63,94,0.1)',
                       border: 'none',
-                      borderRadius: '6px',
-                      padding: '2px 6px',
+                      borderRadius: '8px',
+                      padding: '4px 8px',
                       color: '#f43f5e',
                       cursor: 'pointer',
                       opacity: 0,
@@ -1036,29 +779,28 @@ function Editor() {
         </div>
 
         {/* Chat Area */}
-        <div style={styles.chatArea}>
-          <div style={styles.chatMessages}>
-            <div style={styles.chatInner}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0a0f1e' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+            <div style={{ maxWidth: '1024px', margin: '0 auto', paddingTop: '16px' }}>
               {filteredChat.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '200px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '40px', marginBottom: '12px' }}>💬</div>
-                  <div style={{ fontSize: isMobileDevice ? '16px' : '20px', fontWeight: 700, color: '#e2e8f0' }}>No messages yet</div>
-                  <div style={{ fontSize: isMobileDevice ? '12px' : '14px', color: '#6b7280', marginTop: '8px' }}>Start the conversation!</div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '256px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#e2e8f0' }}>No messages yet</div>
+                  <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '8px' }}>Start the conversation by sending a message!</div>
                 </div>
               ) : (
                 filteredChat.map((msg, i) => (
                   msg.system ? (
                     <div key={msg.id || i} style={{ display: 'flex', justifyContent: 'center' }}>
-                      <span style={{ background: 'rgba(255,255,255,0.05)', color: '#6b7280', fontSize: '9px', padding: '4px 14px', borderRadius: '20px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.1em', border: '1px solid rgba(255,255,255,0.05)' }}>{msg.text}</span>
+                      <span style={{ background: 'rgba(255,255,255,0.05)', color: '#6b7280', fontSize: '10px', padding: '6px 16px', borderRadius: '20px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.1em', border: '1px solid rgba(255,255,255,0.05)' }}>{msg.text}</span>
                     </div>
                   ) : (
                     <div
                       key={msg.id || i}
                       data-message-id={msg.id}
-                      className="message-item"
                       style={{
                         display: 'flex',
-                        marginBottom: '6px',
+                        marginBottom: '8px',
                         animation: 'fadeIn 0.3s ease-out',
                         justifyContent: msg.username === username ? 'flex-end' : 'flex-start'
                       }}
@@ -1074,69 +816,77 @@ function Editor() {
                       <div style={{
                         display: 'flex',
                         alignItems: 'flex-end',
-                        gap: '6px',
-                        maxWidth: isMobileDevice ? '90%' : '85%',
+                        gap: '8px',
+                        maxWidth: '85%',
                         flexDirection: msg.username === username ? 'row-reverse' : 'row'
                       }}>
-                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, border: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, border: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
                           {msg.username.charAt(0).toUpperCase()}
                         </div>
                         <div style={{
-                          ...styles.messageBubble,
+                          padding: '12px 16px',
+                          borderRadius: '16px',
+                          position: 'relative',
+                          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                          minWidth: '60px',
                           ...(msg.username === username 
                             ? { background: 'linear-gradient(135deg, #3b82f6, #6366f1)', borderBottomRightRadius: '4px' }
                             : { background: 'rgba(255,255,255,0.07)', borderBottomLeftRadius: '4px' }
                           )
                         }}>
+                          {/* Reply Indicator */}
                           {msg.replyTo && (
-                            <div style={{ background: 'rgba(255,255,255,0.08)', padding: '4px 10px', borderRadius: '6px', marginBottom: '6px', borderLeft: '2px solid #60a5fa', fontSize: isMobileDevice ? '10px' : '11px' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.08)', padding: '6px 12px', borderRadius: '8px', marginBottom: '8px', borderLeft: '2px solid #60a5fa', fontSize: '11px' }}>
                               <span style={{ color: '#60a5fa', fontWeight: 700 }}>@{msg.replyTo.username}</span>
-                              <span style={{ color: '#94a3b8', marginLeft: '6px' }}>{msg.replyTo.text}</span>
+                              <span style={{ color: '#94a3b8', marginLeft: '8px' }}>{msg.replyTo.text}</span>
                             </div>
                           )}
                           
                           {msg.username !== username && (
-                            <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#60a5fa', marginBottom: '2px' }}>{msg.username}</div>
+                            <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#60a5fa', marginBottom: '4px' }}>{msg.username}</div>
                           )}
                           
+                          {/* File */}
                           {msg.file && (
-                            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px', marginBottom: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <div style={{ width: '40px', height: '40px', background: 'rgba(59,130,246,0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '12px', marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '48px', height: '48px', background: 'rgba(59,130,246,0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
                                   {getFileIcon(msg.file.type)}
                                 </div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: isMobileDevice ? '12px' : '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.file.name}</div>
-                                  <div style={{ fontSize: '9px', color: '#6b7280' }}>{(msg.file.size / 1024).toFixed(1)} KB</div>
+                                  <div style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.file.name}</div>
+                                  <div style={{ fontSize: '10px', color: '#6b7280' }}>{(msg.file.size / 1024).toFixed(1)} KB</div>
                                 </div>
-                                <a href={msg.file.data} download={msg.file.name} style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>⬇️</a>
+                                <a href={msg.file.data} download={msg.file.name} style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>⬇️</a>
                               </div>
                             </div>
                           )}
                           
+                          {/* Image */}
                           {msg.image && (
-                            <img src={msg.image} alt="shared" style={{ borderRadius: '10px', marginBottom: '6px', maxWidth: '100%', maxHeight: '240px', objectFit: 'cover', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', cursor: 'pointer' }} onClick={() => window.open(msg.image, '_blank')} />
+                            <img src={msg.image} alt="shared" style={{ borderRadius: '12px', marginBottom: '8px', maxWidth: '100%', maxHeight: '320px', objectFit: 'cover', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', cursor: 'pointer' }} onClick={() => window.open(msg.image, '_blank')} />
                           )}
                           
+                          {/* Poll */}
                           {msg.poll && (
-                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '6px', minWidth: '180px' }}>
-                              <div style={{ fontWeight: 700, fontSize: isMobileDevice ? '13px' : '14px', marginBottom: '10px', color: '#60a5fa' }}>📊 {msg.poll.question}</div>
+                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '8px', minWidth: '240px' }}>
+                              <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '12px', color: '#60a5fa' }}>📊 {msg.poll.question}</div>
                               {msg.poll.options.map((opt, idx) => (
-                                <button key={idx} onClick={() => handleVote(msg.id, idx)} style={{ width: '100%', textAlign: 'left', marginBottom: '6px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                                  <div style={{ position: 'relative', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', padding: '6px', overflow: 'hidden' }}>
+                                <button key={idx} onClick={() => handleVote(msg.id, idx)} style={{ width: '100%', textAlign: 'left', marginBottom: '8px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                                  <div style={{ position: 'relative', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '8px', overflow: 'hidden' }}>
                                     <div style={{
                                       position: 'absolute',
                                       top: 0,
                                       left: 0,
                                       height: '100%',
                                       background: 'linear-gradient(90deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2))',
-                                      borderRadius: '6px',
+                                      borderRadius: '8px',
                                       transition: 'width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
                                       width: `${msg.poll.options.reduce((a, b) => a + b.votes, 0) > 0 ? (opt.votes / msg.poll.options.reduce((a, b) => a + b.votes, 0)) * 100 : 0}%`
                                     }}></div>
-                                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                                       <span style={{ color: '#e2e8f0' }}>{opt.text}</span>
-                                      <span style={{ fontWeight: 700, color: '#94a3b8' }}>{opt.votes}</span>
+                                      <span style={{ fontWeight: 700, color: '#94a3b8' }}>{opt.votes} votes</span>
                                     </div>
                                   </div>
                                 </button>
@@ -1144,53 +894,54 @@ function Editor() {
                             </div>
                           )}
                           
-                          <div style={styles.msgText}>
+                          <div style={{ fontSize: '14px', lineHeight: 1.6, paddingRight: '32px' }}>
                             {renderMessageText(msg.text)}
-                            {msg.edited && <span style={{ fontSize: '7px', color: '#6b7280', marginLeft: '4px' }}>(edited)</span>}
+                            {msg.edited && <span style={{ fontSize: '8px', color: '#6b7280', marginLeft: '4px' }}>(edited {msg.editedAt})</span>}
                           </div>
                           
                           {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '6px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
                               {Object.entries(msg.reactions).map(([e, c]) => (
-                                <span key={e} style={{ background: 'rgba(0,0,0,0.2)', padding: '1px 6px', borderRadius: '4px', fontSize: '9px' }}>{e} {c}</span>
+                                <span key={e} style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px' }}>{e} {c}</span>
                               ))}
                             </div>
                           )}
                           
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'absolute', bottom: '3px', right: '6px', opacity: 0.6, fontSize: '7px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'absolute', bottom: '4px', right: '8px', opacity: 0.6, fontSize: '8px' }}>
                             <span>{msg.time}</span>
                             {msg.username === username && (
-                              <span style={{ fontSize: '9px', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '10px', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '2px' }}>
                                 {msg.readBy && msg.readBy.length > 0 ? (
                                   <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    ✓✓ <span style={{ fontSize: '7px', color: '#6b7280' }}>{msg.readBy.length}</span>
+                                    ✓✓ <span style={{ fontSize: '8px', color: '#6b7280' }}>{msg.readBy.length}</span>
                                   </span>
                                 ) : '✓'}
                               </span>
                             )}
                           </div>
                           
+                          {/* Action Menu */}
                           <div className="action-menu" style={{
                             position: 'absolute',
-                            top: '-22px',
+                            top: '-24px',
                             right: 0,
                             display: 'none',
-                            gap: '3px',
+                            gap: '4px',
                             background: '#0f172a',
-                            padding: '3px',
-                            borderRadius: '6px',
+                            padding: '4px',
+                            borderRadius: '8px',
                             border: '1px solid rgba(255,255,255,0.08)',
                             boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
                           }}>
-                            <button onClick={() => handleReply(msg)} style={{ fontSize: '9px', padding: '3px 5px', background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Reply">↩️</button>
+                            <button onClick={() => handleReply(msg)} style={{ fontSize: '10px', padding: '4px 6px', background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Reply">↩️</button>
                             {msg.username === username && (
-                              <button onClick={() => handleEditMessage(msg)} style={{ fontSize: '9px', padding: '3px 5px', background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Edit">✏️</button>
+                              <button onClick={() => handleEditMessage(msg)} style={{ fontSize: '10px', padding: '4px 6px', background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Edit">✏️</button>
                             )}
                             {['👍','❤️','😂','😮'].map(e => (
-                              <button key={e} onClick={() => addReaction(msg.id, e)} style={{ fontSize: '12px', padding: '3px 5px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }}>{e}</button>
+                              <button key={e} onClick={() => addReaction(msg.id, e)} style={{ fontSize: '14px', padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }}>{e}</button>
                             ))}
                             {(isStaff || msg.username === username) && (
-                              <button onClick={() => deleteMessage(msg.id)} style={{ fontSize: '9px', padding: '3px 5px', background: 'none', border: 'none', color: '#f43f5e', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Delete">🗑️</button>
+                              <button onClick={() => deleteMessage(msg.id)} style={{ fontSize: '10px', padding: '4px 6px', background: 'none', border: 'none', color: '#f43f5e', cursor: 'pointer', borderRadius: '4px', transition: 'all 0.2s ease' }} title="Delete">🗑️</button>
                             )}
                             {isStaff && (
                               <button 
@@ -1199,8 +950,8 @@ function Editor() {
                                   pinMessage(msg.id);
                                 }} 
                                 style={{ 
-                                  fontSize: '9px', 
-                                  padding: '3px 5px', 
+                                  fontSize: '10px', 
+                                  padding: '4px 6px', 
                                   background: 'none', 
                                   border: 'none', 
                                   color: pinnedMessages.some(m => m.id === msg.id) ? '#34d399' : '#fbbf24', 
@@ -1226,7 +977,14 @@ function Editor() {
         </div>
 
         {/* Right Sidebar */}
-        <div style={styles.rightSidebar}>
+        <div style={{
+          width: '320px',
+          background: '#0a0f1e',
+          borderLeft: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             {['info', 'tasks', 'stats'].map(tab => (
               <button
@@ -1234,8 +992,8 @@ function Editor() {
                 onClick={() => setRightSidebarTab(tab)}
                 style={{
                   flex: 1,
-                  padding: isMobileDevice ? '8px' : '12px',
-                  fontSize: isMobileDevice ? '8px' : '10px',
+                  padding: '12px',
+                  fontSize: '10px',
                   fontWeight: 900,
                   textTransform: 'uppercase',
                   letterSpacing: '0.1em',
@@ -1262,48 +1020,48 @@ function Editor() {
               </button>
             ))}
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: isMobileDevice ? '10px' : '16px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
             {rightTab === 'info' && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: isMobileDevice ? '10px' : '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📌 Pinned</span>
-                  <span style={{ fontSize: '9px', color: '#60a5fa' }}>{pinnedMessages.length}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📌 Pinned Messages</span>
+                  <span style={{ fontSize: '10px', color: '#60a5fa' }}>{pinnedMessages.length}</span>
                 </div>
                 {pinnedMessages.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: '#4b5563', fontSize: '11px', padding: '20px 0' }}>
-                    No pinned messages
-                    <div style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>
-                      {isStaff ? 'ADMIN can pin 📌' : 'Only ADMIN can pin'}
+                  <div style={{ textAlign: 'center', color: '#4b5563', fontSize: '12px', padding: '32px 0' }}>
+                    No pinned messages yet
+                    <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '8px' }}>
+                      {isStaff ? 'ADMIN can pin messages by clicking 📌' : 'Only ADMIN can pin messages'}
                     </div>
                   </div>
                 ) : (
                   pinnedMessages.map(pm => (
                     <div key={pm.id} style={{ 
                       background: 'rgba(255,255,255,0.03)', 
-                      padding: '10px', 
-                      borderRadius: '10px', 
+                      padding: '12px', 
+                      borderRadius: '12px', 
                       border: '1px solid rgba(255,255,255,0.05)',
-                      marginBottom: '6px',
+                      marginBottom: '8px',
                       position: 'relative'
                     }}>
-                      <div style={{ fontSize: '10px', color: '#60a5fa', fontWeight: 700, marginBottom: '2px' }}>
+                      <div style={{ fontSize: '11px', color: '#60a5fa', fontWeight: 700, marginBottom: '4px' }}>
                         {pm.username} 
-                        {pm.pinnedBy && <span style={{ fontSize: '7px', color: '#6b7280', marginLeft: '6px' }}>by {pm.pinnedBy}</span>}
+                        {pm.pinnedBy && <span style={{ fontSize: '8px', color: '#6b7280', marginLeft: '8px' }}>pinned by {pm.pinnedBy}</span>}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{pm.text}</div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{pm.text}</div>
                       {isStaff && (
                         <button 
                           onClick={() => unpinMessage(pm.id)}
                           style={{
                             position: 'absolute',
-                            top: '6px',
-                            right: '6px',
+                            top: '8px',
+                            right: '8px',
                             background: 'none',
                             border: 'none',
                             color: '#6b7280',
                             cursor: 'pointer',
-                            fontSize: '9px',
-                            padding: '2px'
+                            fontSize: '10px',
+                            padding: '4px'
                           }}
                           title="Unpin"
                         >
@@ -1317,23 +1075,23 @@ function Editor() {
             )}
             {rightTab === 'tasks' && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: isMobileDevice ? '10px' : '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>✅ Tasks</span>
-                  <span style={{ fontSize: '9px', color: '#60a5fa' }}>{tasks.length}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>✅ Tasks</span>
+                  <span style={{ fontSize: '10px', color: '#60a5fa' }}>{tasks.length}</span>
                 </div>
                 {['todo', 'doing', 'done'].map(status => {
                   const statusTasks = tasks.filter(t => t.status === status);
                   return (
-                    <div key={status} style={{ marginBottom: '10px' }}>
-                      <div style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: status === 'todo' ? '#fbbf24' : status === 'doing' ? '#60a5fa' : '#34d399', marginBottom: '4px' }}>
+                    <div key={status} style={{ marginBottom: '12px' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: status === 'todo' ? '#fbbf24' : status === 'doing' ? '#60a5fa' : '#34d399', marginBottom: '4px' }}>
                         {status} ({statusTasks.length})
                       </div>
                       {statusTasks.map(task => (
-                        <div key={task.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '10px', marginBottom: '6px', transition: 'all 0.3s ease' }}>
-                          <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>{task.title}</div>
-                          <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                        <div key={task.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px', marginBottom: '8px', transition: 'all 0.3s ease' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>{task.title}</div>
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                             {['todo', 'doing', 'done'].filter(s => s !== status).map(s => (
-                              <button key={s} onClick={() => updateTaskStatus(task.id, s)} style={{ fontSize: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', padding: '2px 6px', color: '#94a3b8', cursor: 'pointer', textTransform: 'uppercase', transition: 'all 0.3s ease' }} onMouseEnter={(e) => { e.target.style.background = '#3b82f6'; e.target.style.color = 'white'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = '#94a3b8'; }}>{s}</button>
+                              <button key={s} onClick={() => updateTaskStatus(task.id, s)} style={{ fontSize: '9px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', padding: '2px 8px', color: '#94a3b8', cursor: 'pointer', textTransform: 'uppercase', transition: 'all 0.3s ease' }} onMouseEnter={(e) => { e.target.style.background = '#3b82f6'; e.target.style.color = 'white'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = '#94a3b8'; }}>{s}</button>
                             ))}
                           </div>
                         </div>
@@ -1341,28 +1099,28 @@ function Editor() {
                     </div>
                   );
                 })}
-                <button onClick={() => { const title = prompt('📝 Enter task title:'); if (title && title.trim()) { socket.emit('create-task', { roomId, task: { title: title.trim(), assignee: username, createdBy: username, createdAt: new Date().toISOString() } }); showToast('✅ Task created!', 'success'); } }} style={{ width: '100%', padding: '8px', background: '#3b82f6', border: 'none', borderRadius: '10px', color: 'white', fontSize: '11px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }} onMouseEnter={(e) => e.target.style.background = '#2563eb'} onMouseLeave={(e) => e.target.style.background = '#3b82f6'}>+ New Task</button>
+                <button onClick={() => { const title = prompt('📝 Enter task title:'); if (title && title.trim()) { socket.emit('create-task', { roomId, task: { title: title.trim(), assignee: username, createdBy: username, createdAt: new Date().toISOString() } }); showToast('✅ Task created!', 'success'); } }} style={{ width: '100%', padding: '10px', background: '#3b82f6', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }} onMouseEnter={(e) => e.target.style.background = '#2563eb'} onMouseLeave={(e) => e.target.style.background = '#3b82f6'}>+ New Task</button>
               </div>
             )}
             {rightTab === 'stats' && (
               <div>
-                <div style={{ fontSize: isMobileDevice ? '10px' : '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>📊 Stats</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '9px', color: '#6b7280' }}>Messages</div>
-                    <div style={{ fontSize: '20px', fontWeight: 700 }}>{chat.filter(m => !m.system).length}</div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '16px' }}>📊 Statistics</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Total Messages</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{chat.filter(m => !m.system).length}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '9px', color: '#6b7280' }}>Users</div>
-                    <div style={{ fontSize: '20px', fontWeight: 700 }}>{users.length}</div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Active Users</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{users.length}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '9px', color: '#6b7280' }}>Pinned</div>
-                    <div style={{ fontSize: '20px', fontWeight: 700 }}>{pinnedMessages.length}</div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Pinned Messages</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{pinnedMessages.length}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '9px', color: '#6b7280' }}>Tasks</div>
-                    <div style={{ fontSize: '20px', fontWeight: 700 }}>{tasks.length}</div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: '10px', color: '#6b7280' }}>Tasks</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{tasks.length}</div>
                   </div>
                 </div>
               </div>
@@ -1372,106 +1130,131 @@ function Editor() {
       </div>
 
       {/* Input Area */}
-      <div style={styles.inputArea}>
+      <div style={{
+        background: 'rgba(10,15,30,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        padding: '12px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 10
+      }}>
         {/* Smart Replies */}
         {suggestedReplies.length > 0 && (
-          <div style={styles.smartReplies}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px', marginLeft: '48px' }}>
             {suggestedReplies.map((reply, i) => (
-              <button key={i} onClick={() => { setMessage(reply); sendMessage(null); }} style={styles.smartReplyBtn} onMouseEnter={(e) => { e.target.style.background = '#3b82f6'; e.target.style.color = 'white'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(59,130,246,0.1)'; e.target.style.color = '#60a5fa'; }}>{reply}</button>
+              <button key={i} onClick={() => { setMessage(reply); sendMessage(null); }} style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '20px', padding: '4px 14px', fontSize: '10px', color: '#60a5fa', cursor: 'pointer', transition: 'all 0.3s ease', fontWeight: 700 }} onMouseEnter={(e) => { e.target.style.background = '#3b82f6'; e.target.style.color = 'white'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(59,130,246,0.1)'; e.target.style.color = '#60a5fa'; }}>{reply}</button>
             ))}
           </div>
         )}
 
         {/* Reply Indicator */}
         {replyTo && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(59,130,246,0.1)', padding: '6px 12px', borderRadius: '10px', marginBottom: '6px', marginLeft: isMobileDevice ? '0' : '48px', borderLeft: '4px solid #3b82f6' }}>
-            <span style={{ fontSize: '10px', color: '#60a5fa' }}>Replying to {replyTo.username}:</span>
-            <span style={{ fontSize: '10px', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyTo.text}</span>
-            <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '12px' }}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(59,130,246,0.1)', padding: '8px 16px', borderRadius: '12px', marginBottom: '8px', marginLeft: '48px', borderLeft: '4px solid #3b82f6' }}>
+            <span style={{ fontSize: '11px', color: '#60a5fa' }}>Replying to {replyTo.username}:</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyTo.text}</span>
+            <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px' }}>✕</button>
           </div>
         )}
 
         {/* Edit Indicator */}
         {editingMessage && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(251,191,36,0.1)', padding: '6px 12px', borderRadius: '10px', marginBottom: '6px', marginLeft: isMobileDevice ? '0' : '48px', borderLeft: '4px solid #fbbf24' }}>
-            <span style={{ fontSize: '10px', color: '#fbbf24' }}>Editing:</span>
-            <span style={{ fontSize: '10px', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editingMessage.text}</span>
-            <button onClick={() => { setEditingMessage(null); setMessage(''); }} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '12px' }}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(251,191,36,0.1)', padding: '8px 16px', borderRadius: '12px', marginBottom: '8px', marginLeft: '48px', borderLeft: '4px solid #fbbf24' }}>
+            <span style={{ fontSize: '11px', color: '#fbbf24' }}>Editing message:</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editingMessage.text}</span>
+            <button onClick={() => { setEditingMessage(null); setMessage(''); }} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px' }}>✕</button>
           </div>
         )}
 
         {/* Typing Indicator */}
         {typingUser && (
-          <div style={{ fontSize: '9px', color: '#34d399', fontWeight: 700, marginBottom: '6px', marginLeft: isMobileDevice ? '0' : '48px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#34d399', display: 'inline-block', animation: 'pulse 1.5s infinite' }}></span>
-            {typingUser} typing...
+          <div style={{ fontSize: '10px', color: '#34d399', fontWeight: 700, marginBottom: '8px', marginLeft: '48px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34d399', display: 'inline-block', animation: 'pulse 1.5s infinite' }}></span>
+            {typingUser} is typing...
           </div>
         )}
 
         {/* Input Form */}
-        <form onSubmit={sendMessage} style={styles.inputForm}>
-          <label style={styles.inputBtn} onMouseEnter={(e) => e.currentTarget.style.color = '#60a5fa'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
-            <svg viewBox="0 0 24 24" width={isMobileDevice ? "16" : "22"} height={isMobileDevice ? "16" : "22"} fill="currentColor">
+        <form onSubmit={sendMessage} style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '1024px', margin: '0 auto', width: '100%' }}>
+          {/* Image Upload */}
+          <label style={{ background: 'none', border: 'none', color: '#6b7280', padding: '8px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#60a5fa'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M11.999 14.942c2.001 0 3.531-1.53 3.531-3.531V4.35c0-2.001-1.53-3.531-3.531-3.531S8.469 2.35 8.469 4.35v7.061c0 2.001 1.53 3.531 3.53 3.531zm6.235-3.531c0 3.531-2.942 6.002-6.235 6.002s-6.235-2.471-6.235-6.002H3.705c0 4.001 3.177 7.296 7.061 7.767V23.5h2.467v-4.324c3.884-.471 7.061-3.766 7.061-7.767h-2.059z"/>
             </svg>
             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
           </label>
 
-          <label style={styles.inputBtn} onMouseEnter={(e) => e.currentTarget.style.color = '#34d399'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
-            <svg viewBox="0 0 24 24" width={isMobileDevice ? "16" : "22"} height={isMobileDevice ? "16" : "22"} fill="currentColor">
+          {/* File Upload */}
+          <label style={{ background: 'none', border: 'none', color: '#6b7280', padding: '8px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#34d399'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
               <polyline points="13 2 13 9 20 9"/>
             </svg>
             <input type="file" style={{ display: 'none' }} onChange={handleFileUpload} accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.txt,.ppt,.pptx" />
           </label>
 
+          {/* Emoji Picker */}
           <div style={{ position: 'relative' }} ref={emojiPickerRef}>
-            <button type="button" onClick={() => setShowEmojiPicker(prev => !prev)} style={styles.inputBtn} onMouseEnter={(e) => e.currentTarget.style.color = '#fbbf24'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
-              <svg viewBox="0 0 24 24" width={isMobileDevice ? "18" : "24"} height={isMobileDevice ? "18" : "24"} fill="currentColor">
+            <button type="button" onClick={() => setShowEmojiPicker(prev => !prev)} style={{ background: 'none', border: 'none', color: '#6b7280', padding: '8px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#fbbf24'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
                 <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10zM8 9a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm8 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-4 8c-2.206 0-4-1.794-4-4h2c0 1.103.897 2 2 2s2-.897 2-2h2c0 2.206-1.794 4-4 4z"/>
               </svg>
             </button>
             {showEmojiPicker && (
-              <div style={{ 
-                position: 'absolute', 
-                bottom: isMobileDevice ? '40px' : '48px', 
-                left: isMobileDevice ? '-80px' : 0,
-                background: '#1e293b', 
-                border: '1px solid rgba(255,255,255,0.08)', 
-                borderRadius: '12px', 
-                padding: '8px', 
-                display: 'grid', 
-                gridTemplateColumns: isMobileDevice ? 'repeat(5, 1fr)' : 'repeat(6, 1fr)',
-                gap: '3px', 
-                zIndex: 50, 
-                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                width: isMobileDevice ? '260px' : 'auto'
-              }}>
+              <div style={{ position: 'absolute', bottom: '48px', left: 0, background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '12px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
                 {emojis.map((emoji, index) => (
-                  <button key={index} type="button" onClick={() => handleEmojiSelect(emoji)} style={{ padding: '6px', fontSize: isMobileDevice ? '16px' : '20px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '6px', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>{emoji}</button>
+                  <button key={index} type="button" onClick={() => handleEmojiSelect(emoji)} style={{ padding: '8px', fontSize: '20px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '8px', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>{emoji}</button>
                 ))}
               </div>
             )}
           </div>
 
+          {/* Message Input */}
           <input
             id="message-input"
             type="text"
             value={message}
             onChange={handleTyping}
-            placeholder={replyTo ? `Reply to ${replyTo.username}...` : editingMessage ? "Edit..." : "Message..."}
-            style={styles.messageInput}
+            placeholder={replyTo ? `Reply to ${replyTo.username}...` : editingMessage ? "Edit message..." : "Type a message..."}
+            style={{
+              flex: 1,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '24px',
+              padding: '12px 20px',
+              fontSize: '14px',
+              color: 'white',
+              outline: 'none',
+              transition: 'all 0.3s ease',
+              minWidth: '100px'
+            }}
             onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
             onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
           />
 
+          {/* Send Button */}
           <button
             type="submit"
-            style={styles.sendBtn}
+            style={{
+              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              border: 'none',
+              borderRadius: '50%',
+              padding: '12px',
+              color: 'white',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 20px rgba(59,130,246,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '48px',
+              height: '48px',
+              flexShrink: 0
+            }}
             onMouseEnter={(e) => { e.target.style.background = 'linear-gradient(135deg, #2563eb, #7c3aed)'; }}
             onMouseLeave={(e) => { e.target.style.background = 'linear-gradient(135deg, #3b82f6, #8b5cf6)'; }}
           >
-            <svg viewBox="0 0 24 24" height={isMobileDevice ? "18" : "24"} width={isMobileDevice ? "18" : "24"} preserveAspectRatio="xMidYMid meet" fill="white">
+            <svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" fill="white">
               <path d="M1.101,21.757L23.8,12.028L1.101,2.3l0.011,7.912l13.623,1.816L1.112,13.845L1.101,21.757z"/>
             </svg>
           </button>
@@ -1483,14 +1266,14 @@ function Editor() {
         onClick={() => setShowPollModal(true)}
         style={{
           position: 'fixed',
-          bottom: isMobileDevice ? '70px' : '96px',
-          right: isMobileDevice ? '12px' : '24px',
+          bottom: '96px',
+          right: '24px',
           background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
           border: 'none',
           borderRadius: '50%',
-          padding: isMobileDevice ? '10px' : '14px',
+          padding: '14px',
           color: 'white',
-          fontSize: isMobileDevice ? '16px' : '20px',
+          fontSize: '20px',
           cursor: 'pointer',
           boxShadow: '0 8px 32px rgba(59,130,246,0.3)',
           transition: 'all 0.3s ease',
@@ -1501,38 +1284,6 @@ function Editor() {
       >
         📊
       </button>
-
-      {/* Mobile Bottom Navigation */}
-      <div style={styles.mobileNav}>
-        <button 
-          onClick={() => setRightSidebarTab('info')} 
-          style={{ ...styles.mobileNavBtn, color: rightTab === 'info' ? '#60a5fa' : '#6b7280' }}
-        >
-          <span style={{ fontSize: '18px' }}>📌</span>
-          <span>Info</span>
-        </button>
-        <button 
-          onClick={() => setRightSidebarTab('tasks')} 
-          style={{ ...styles.mobileNavBtn, color: rightTab === 'tasks' ? '#60a5fa' : '#6b7280' }}
-        >
-          <span style={{ fontSize: '18px' }}>✅</span>
-          <span>Tasks</span>
-        </button>
-        <button 
-          onClick={() => setRightSidebarTab('stats')} 
-          style={{ ...styles.mobileNavBtn, color: rightTab === 'stats' ? '#60a5fa' : '#6b7280' }}
-        >
-          <span style={{ fontSize: '18px' }}>📊</span>
-          <span>Stats</span>
-        </button>
-        <button 
-          onClick={() => setShowProfileModal(true)}
-          style={styles.mobileNavBtn}
-        >
-          <span style={{ fontSize: '18px' }}>👤</span>
-          <span>Profile</span>
-        </button>
-      </div>
 
       {/* Profile Modal */}
       {showProfileModal && (
@@ -1549,40 +1300,40 @@ function Editor() {
         }} onClick={() => setShowProfileModal(false)}>
           <div style={{
             background: '#0f172a',
-            padding: isMobileDevice ? '20px' : '32px',
-            borderRadius: '20px',
+            padding: '32px',
+            borderRadius: '24px',
             maxWidth: '448px',
             width: '100%',
             border: '1px solid rgba(255,255,255,0.08)',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
           }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: isMobileDevice ? '20px' : '24px', fontWeight: 700, marginBottom: '20px', background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Edit Profile</div>
+            <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px', background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Edit Profile</div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '20px' }}>
-              <div style={{ width: isMobileDevice ? '72px' : '96px', height: isMobileDevice ? '72px' : '96px', borderRadius: '50%', background: 'linear-gradient(135deg, #1e293b, #0f172a)', overflow: 'hidden', marginBottom: '10px', position: 'relative', cursor: 'pointer' }} onMouseEnter={(e) => { const label = e.currentTarget.querySelector('.avatar-label'); if (label) label.style.opacity = 1; }} onMouseLeave={(e) => { const label = e.currentTarget.querySelector('.avatar-label'); if (label) label.style.opacity = 0; }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '24px' }}>
+              <div style={{ width: '96px', height: '96px', borderRadius: '50%', background: 'linear-gradient(135deg, #1e293b, #0f172a)', overflow: 'hidden', marginBottom: '12px', position: 'relative', cursor: 'pointer' }} onMouseEnter={(e) => { const label = e.currentTarget.querySelector('.avatar-label'); if (label) label.style.opacity = 1; }} onMouseLeave={(e) => { const label = e.currentTarget.querySelector('.avatar-label'); if (label) label.style.opacity = 0; }}>
                 {avatar ? (
                   <img src={avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobileDevice ? '28px' : '36px', fontWeight: 700, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', fontWeight: 700, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
                     {username.charAt(0).toUpperCase()}
                   </div>
                 )}
                 <label className="avatar-label" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.3s ease', cursor: 'pointer' }}>
-                  <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>Change</span>
+                  <span style={{ color: 'white', fontSize: '12px', fontWeight: 700 }}>Change</span>
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
                 </label>
               </div>
-              <div style={{ fontSize: isMobileDevice ? '13px' : '14px', fontWeight: 700 }}>{username}</div>
+              <div style={{ fontSize: '14px', fontWeight: 700 }}>{username}</div>
             </div>
 
             <div>
-              <label style={{ fontSize: '9px', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bio</label>
-              <textarea style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: 'white', fontSize: '13px', outline: 'none', marginBottom: '10px', resize: 'none', boxSizing: 'border-box' }} rows="3" placeholder="Tell about yourself..." value={bio} onChange={(e) => setBio(e.target.value)} />
+              <label style={{ fontSize: '10px', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bio</label>
+              <textarea style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '12px', resize: 'none', boxSizing: 'border-box' }} rows="3" placeholder="Tell about yourself..." value={bio} onChange={(e) => setBio(e.target.value)} />
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button onClick={() => setShowProfileModal(false)} style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease' }}>Cancel</button>
-              <button onClick={updateProfile} style={{ flex: 1, padding: '10px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }}>💾 Save</button>
+              <button onClick={() => setShowProfileModal(false)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease' }}>Cancel</button>
+              <button onClick={updateProfile} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }}>💾 Save Profile</button>
             </div>
           </div>
         </div>
@@ -1603,26 +1354,26 @@ function Editor() {
         }} onClick={() => setShowPollModal(false)}>
           <div style={{
             background: '#0f172a',
-            padding: isMobileDevice ? '20px' : '32px',
-            borderRadius: '20px',
+            padding: '32px',
+            borderRadius: '24px',
             maxWidth: '448px',
             width: '100%',
             border: '1px solid rgba(255,255,255,0.08)',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
           }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: isMobileDevice ? '20px' : '24px', fontWeight: 700, marginBottom: '20px', background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>📊 Create Poll</div>
+            <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px', background: 'linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>📊 Create a Poll</div>
             
-            <input placeholder="Question" style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: 'white', fontSize: '13px', outline: 'none', marginBottom: '10px', boxSizing: 'border-box' }} value={pollForm.question} onChange={e => setPollForm({ ...pollForm, question: e.target.value })} />
+            <input placeholder="Question" style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '12px', boxSizing: 'border-box' }} value={pollForm.question} onChange={e => setPollForm({ ...pollForm, question: e.target.value })} />
             
             {pollForm.options.map((opt, i) => (
-              <input key={i} placeholder={`Option ${i + 1}`} style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: 'white', fontSize: '13px', outline: 'none', marginBottom: '10px', boxSizing: 'border-box' }} value={opt} onChange={e => { const newOpts = [...pollForm.options]; newOpts[i] = e.target.value; setPollForm({ ...pollForm, options: newOpts }); }} />
+              <input key={i} placeholder={`Option ${i + 1}`} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '12px', boxSizing: 'border-box' }} value={opt} onChange={e => { const newOpts = [...pollForm.options]; newOpts[i] = e.target.value; setPollForm({ ...pollForm, options: newOpts }); }} />
             ))}
             
-            <button onClick={() => setPollForm({ ...pollForm, options: [...pollForm.options, ''] })} style={{ color: '#60a5fa', fontSize: '11px', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', marginBottom: '12px' }}>+ Add Option</button>
+            <button onClick={() => setPollForm({ ...pollForm, options: [...pollForm.options, ''] })} style={{ color: '#60a5fa', fontSize: '12px', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', marginBottom: '16px' }}>+ Add Option</button>
 
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button onClick={() => setShowPollModal(false)} style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease' }}>Cancel</button>
-              <button onClick={createPoll} style={{ flex: 1, padding: '10px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }}>📤 Post</button>
+              <button onClick={() => setShowPollModal(false)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease' }}>Cancel</button>
+              <button onClick={createPoll} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: '0 4px 20px rgba(59,130,246,0.2)' }}>📤 Post Poll</button>
             </div>
           </div>
         </div>
