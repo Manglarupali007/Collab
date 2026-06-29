@@ -66,18 +66,24 @@ function Editor() {
       socket.io.opts.auth = { token };
     }
 
-    const onConnect = () => {
-      console.log("Connected to server");
-      socket.emit('join-room', { roomId, password });
-    };
+   const onConnect = () => {
+  console.log("✅ Connected to server");
+  socket.emit('join-room', { roomId, password });
+};
 
-    if (socket.connected) {
-      onConnect();
-    } else {
-      socket.connect();
-    }
+if (socket.connected) {
+  onConnect();
+} else {
+  socket.connect();
+}
 
-    socket.on('connect', onConnect);
+socket.on('connect', onConnect);
+
+// ✅ FIX: Reconnect par automatically room join karo
+socket.on('reconnect', () => {
+  console.log("🔄 Reconnected, rejoining room...");
+  socket.emit('join-room', { roomId, password });
+});
     
     socket.on('message-history', (history) => {
       setChat(history);

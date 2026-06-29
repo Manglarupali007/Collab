@@ -156,48 +156,64 @@ app.post('/api/login', async (req, res) => {
 io.on('connection', (socket) => {
   console.log(`📡 Socket established: ${socket.username} (${socket.id})`);
   
+
   socket.on('join-room', ({ roomId, password }) => {
-    if (!rooms.has(roomId)) {
-      rooms.set(roomId, {
-        users: new Map(),
-        password: password,
-        messages: [],
-        pinnedMessages: [],
-        tasks: [],
-        auditLogs: [],
-        scheduledMessages: []
-      });
-    }
-    
-    const room = rooms.get(roomId);
-
-    if (room.password && room.password !== password) {
-      socket.emit('error', 'Invalid room password');
-      return;
-    }
-
-    socket.join(roomId);
-    
-    const role = room.users.size === 0 ? 'ADMIN' : 'MEMBER';
-    room.users.set(socket.id, { 
-      username: socket.username, 
-      id: socket.id, 
-      role, 
-      status: 'online',
-      avatar: null,
-      bio: ''
+  console.log(`📡 ${socket.username} joining room: ${roomId}`);
+  
+  if (!rooms.has(roomId)) {
+    console.log(`🆕 Creating new room: ${roomId}`);
+    rooms.set(roomId, {
+      users: new Map(),
+      password: password,
+      messages: [],
+      pinnedMessages: [],
+      tasks: [],
+      auditLogs: [],
+      scheduledMessages: []
     });
-    
-    socket.emit('message-history', room.messages);
-    socket.emit('pinned-history', room.pinnedMessages);
+  }
+  
+  const room = rooms.get(roomId);
 
-    io.to(roomId).emit('user-joined', {
-      users: Array.from(room.users.values()),
-      userId: socket.id
-    });
-    
-    console.log(`👤 ${socket.username} joined room: ${roomId}`);
+  if (room.password && room.password !== password) {
+    socket.emit('error', 'Invalid room password');
+    return;
+  }
+
+  // ✅ FIX 1: Socket ko room mein join karo
+  socket.join(roomId);
+  
+  // ✅ FIX 2: Agar same user already hai toh remove karo (multiple tabs ke liye)
+  for (const [id, user] of room.users) {
+    if (user.username === socket.username) {
+      console.log(`⚠️ Removing existing entry for ${socket.username}`);
+      room.users.delete(id);
+      break;
+    }
+  }
+  
+  const role = room.users.size === 0 ? 'ADMIN' : 'MEMBER';
+  room.users.set(socket.id, { 
+    username: socket.username, 
+    id: socket.id, 
+    role, 
+    status: 'online',
+    avatar: null,
+    bio: ''
   });
+  
+  console.log(`👥 Users in room: ${Array.from(room.users.values()).map(u => u.username).join(', ')}`);
+  
+  socket.emit('message-history', room.messages);
+  socket.emit('pinned-history', room.pinnedMessages);
+
+  io.to(roomId).emit('user-joined', {
+    users: Array.from(room.users.values()),
+    userId: socket.id
+  });
+  
+  console.log(`✅ ${socket.username} joined room: ${roomId}`);
+});
   
   socket.on('update-status', ({ roomId, status }) => {
     const room = rooms.get(roomId);
