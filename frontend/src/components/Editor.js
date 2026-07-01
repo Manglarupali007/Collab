@@ -41,7 +41,6 @@ function Editor() {
   const emojiPickerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const receivedMessageIds = useRef(new Set());
-  const notificationSoundRef = useRef(null);
 
   // ===== TOAST =====
   const showToast = (message, type = 'info') => {
@@ -807,7 +806,7 @@ function Editor() {
           display: isMobileDevice ? (showMobileSidebar ? 'flex' : 'none') : 'flex',
           width: isMobileDevice ? '100%' : '200px',
           maxHeight: isMobileDevice ? '50%' : '100%',
-          background: '#0a0f1e',
+          backgroundColor: '#0a0f1e',
           borderRight: isMobileDevice ? 'none' : '1px solid rgba(255,255,255,0.05)',
           borderBottom: isMobileDevice ? '1px solid rgba(255,255,255,0.05)' : 'none',
           flexDirection: 'column',

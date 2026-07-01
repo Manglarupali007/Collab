@@ -6,27 +6,14 @@ const RoomSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  roomName: {
-    type: String,
-    default: ''
-  },
-  roomType: {
-    type: String,
-    enum: ['private', 'group'],
-    default: 'private'
-  },
   password: {
     type: String,
-    default: ''
+    required: true
   },
   createdBy: {
     type: String,
     required: true
   },
-  groupAdmins: [{
-    type: String,
-    default: []
-  }],
   users: [{
     username: String,
     socketId: String,
@@ -56,14 +43,8 @@ const RoomSchema = new mongoose.Schema({
     reactions: Object,
     time: String,
     readBy: [String],
-    readCount: {
-      type: Number,
-      default: 0
-    },
-    edited: {
-      type: Boolean,
-      default: false
-    },
+    readCount: Number,
+    edited: Boolean,
     editedAt: String,
     replyTo: Object,
     file: Object,
@@ -96,21 +77,7 @@ const RoomSchema = new mongoose.Schema({
     text: String,
     scheduledTime: Date,
     time: String
-  }],
-  inviteLinks: [{
-    code: String,
-    expiresAt: Date,
-    maxUses: Number,
-    uses: {
-      type: Number,
-      default: 0
-    },
-    createdBy: String
-  }],
-  isActive: {
-    type: Boolean,
-    default: true
-  }
+  }]
 }, {
   timestamps: true
 });

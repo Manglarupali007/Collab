@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
 
 // ===== IMPORT DATABASE =====
-const connectDB = require('./config/database');  // ✅ SIRF EK BAAR
+const connectDB = require('./config/database');
 const User = require('./models/User');
 const Room = require('./models/Room');
 
@@ -37,7 +37,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const server = http.createServer(app);
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'nexus_super_secret_key_2024';
 
 // ===== SOCKET.IO =====
 const io = socketIo(server, {
@@ -55,7 +55,7 @@ const io = socketIo(server, {
 });
 
 // ===== CONNECT DATABASE =====
-connectDB();  // ✅ SIRF EK BAAR CALL
+connectDB();
 
 // ===== IN-MEMORY CACHE =====
 const activeRooms = new Map();
@@ -63,70 +63,109 @@ const activeRooms = new Map();
 // ===== SOCKET AUTH =====
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('Authentication error'));
+  if (!token) {
+    console.log("❌ No token provided");
+    return next(new Error('Authentication error'));
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     socket.username = decoded.username;
     socket.userId = decoded.userId;
+    console.log(`✅ Socket authenticated: ${socket.username}`);
     next();
   } catch (err) {
+    console.error("❌ Socket Auth Failed:", err.message);
     next(new Error('Authentication error'));
   }
 });
 
+// ==========================================
 // ===== AUTH ROUTES =====
+// ==========================================
 
-// REGISTER
+// ===== REGISTER =====
 app.post('/api/register', async (req, res) => {
   try {
+    console.log('📝 Register request:', req.body);
+    
     const { username, password } = req.body;
-    if (!username || !password || password.length < 6) {
-      return res.status(400).json({ error: 'Username and password (min 6 chars) required' });
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
     }
     
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    
+    // Check if user exists
     const existingUser = await User.findOne({ username });
     if (existingUser) {
       return res.status(400).json({ error: 'Username already taken' });
     }
     
-    const user = new User({ username: username.trim(), password });
+    // Create user
+    const user = new User({
+      username: username.trim(),
+      password: password
+    });
+    
     await user.save();
     
-    res.json({ success: true, message: 'User registered successfully!' });
-  } catch (err) {
-    console.error('Register error:', err);
+    console.log(`✅ User registered: ${username}`);
+    res.json({ 
+      success: true, 
+      message: 'User registered successfully!' 
+    });
+    
+  } catch (error) {
+    console.error('❌ Register error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// LOGIN
+// ===== LOGIN =====
 app.post('/api/login', async (req, res) => {
   try {
+    console.log('🔑 Login request:', req.body);
+    
     const { username, password } = req.body;
+    
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password required' });
     }
     
+    // Find user
     const user = await User.findOne({ username });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    const isMatch = await user.comparePassword(password);
+    // Check password using comparePassword
+    const isMatch = await new Promise((resolve, reject) => {
+      user.comparePassword(password, (err, isMatch) => {
+        if (err) return reject(err);
+        resolve(isMatch);
+      });
+    });
+    
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
+    // Update last login
     user.lastLogin = new Date();
     user.isOnline = true;
     await user.save();
     
+    // Generate token
     const token = jwt.sign(
       { username: user.username, userId: user._id },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
     
+    console.log(`✅ User logged in: ${username}`);
     res.json({
       success: true,
       token,
@@ -138,17 +177,20 @@ app.post('/api/login', async (req, res) => {
         bio: user.bio
       }
     });
-  } catch (err) {
-    console.error('Login error:', err);
+    
+  } catch (error) {
+    console.error('❌ Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// GET USER PROFILE
+// ===== GET USER PROFILE =====
 app.get('/api/user/:username', async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     res.json({
       username: user.username,
       avatar: user.avatar,
@@ -156,17 +198,20 @@ app.get('/api/user/:username', async (req, res) => {
       createdAt: user.createdAt,
       isOnline: user.isOnline
     });
-  } catch (err) {
+  } catch (error) {
+    console.error('❌ Get user error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// UPDATE USER PROFILE
+// ===== UPDATE USER PROFILE =====
 app.put('/api/user/:username', async (req, res) => {
   try {
     const { avatar, bio } = req.body;
     const user = await User.findOne({ username: req.params.username });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     
     if (avatar !== undefined) user.avatar = avatar;
     if (bio !== undefined) user.bio = bio;
@@ -174,21 +219,30 @@ app.put('/api/user/:username', async (req, res) => {
     
     res.json({
       success: true,
-      user: { username: user.username, avatar: user.avatar, bio: user.bio }
+      user: {
+        username: user.username,
+        avatar: user.avatar,
+        bio: user.bio
+      }
     });
-  } catch (err) {
+  } catch (error) {
+    console.error('❌ Update user error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+// ==========================================
 // ===== SOCKET EVENTS =====
+// ==========================================
 
 io.on('connection', (socket) => {
-  console.log(`📡 ${socket.username} connected`);
+  console.log(`📡 ${socket.username} connected (${socket.id})`);
   
-  // JOIN ROOM
+  // ===== JOIN ROOM =====
   socket.on('join-room', async ({ roomId, password }) => {
     try {
+      console.log(`📡 ${socket.username} joining room: ${roomId}`);
+      
       let room = await Room.findOne({ roomId });
       
       if (!room) {
@@ -203,6 +257,7 @@ io.on('connection', (socket) => {
           scheduledMessages: []
         });
         await room.save();
+        console.log(`🆕 New room created: ${roomId}`);
       }
       
       if (room.password !== password) {
@@ -269,13 +324,13 @@ io.on('connection', (socket) => {
       });
       
       console.log(`✅ ${socket.username} joined room: ${roomId}`);
-    } catch (err) {
-      console.error('Join room error:', err);
+    } catch (error) {
+      console.error('❌ Join room error:', error);
       socket.emit('error', 'Failed to join room');
     }
   });
   
-  // SEND MESSAGE
+  // ===== SEND MESSAGE =====
   socket.on('send-message', async ({ roomId, username, text, image, poll, time, id }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -306,12 +361,21 @@ io.on('connection', (socket) => {
       }
       
       io.to(roomId).emit('receive-message', messageData);
-    } catch (err) {
-      console.error('Send message error:', err);
+    } catch (error) {
+      console.error('❌ Send message error:', error);
     }
   });
   
-  // UPDATE STATUS
+  // ===== TYPING =====
+  socket.on('typing', ({ roomId, username }) => {
+    socket.to(roomId).emit('user-typing', { username });
+  });
+  
+  socket.on('stop-typing', ({ roomId }) => {
+    socket.to(roomId).emit('user-stop-typing', { userId: socket.id });
+  });
+  
+  // ===== UPDATE STATUS =====
   socket.on('update-status', async ({ roomId, status }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -338,21 +402,12 @@ io.on('connection', (socket) => {
           userId: null
         });
       }
-    } catch (err) {
-      console.error('Update status error:', err);
+    } catch (error) {
+      console.error('❌ Update status error:', error);
     }
   });
   
-  // TYPING
-  socket.on('typing', ({ roomId, username }) => {
-    socket.to(roomId).emit('user-typing', { username });
-  });
-  
-  socket.on('stop-typing', ({ roomId }) => {
-    socket.to(roomId).emit('user-stop-typing', { userId: socket.id });
-  });
-  
-  // REPLY
+  // ===== REPLY TO MESSAGE =====
   socket.on('reply-to-message', async ({ roomId, messageId, replyText, username, time }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -385,12 +440,12 @@ io.on('connection', (socket) => {
         
         io.to(roomId).emit('receive-message', replyData);
       }
-    } catch (err) {
-      console.error('Reply error:', err);
+    } catch (error) {
+      console.error('❌ Reply error:', error);
     }
   });
   
-  // SHARE FILE
+  // ===== SHARE FILE =====
   socket.on('share-file', async ({ roomId, username, fileName, fileData, fileType, fileSize, time }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -422,12 +477,12 @@ io.on('connection', (socket) => {
       }
       
       io.to(roomId).emit('receive-message', fileMessage);
-    } catch (err) {
-      console.error('File share error:', err);
+    } catch (error) {
+      console.error('❌ File share error:', error);
     }
   });
   
-  // EDIT MESSAGE
+  // ===== EDIT MESSAGE =====
   socket.on('edit-message', async ({ roomId, messageId, newText }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -452,12 +507,12 @@ io.on('connection', (socket) => {
         
         io.to(roomId).emit('message-edited', { messageId, newText, editedAt: msg.editedAt });
       }
-    } catch (err) {
-      console.error('Edit message error:', err);
+    } catch (error) {
+      console.error('❌ Edit message error:', error);
     }
   });
   
-  // ADD REACTION
+  // ===== ADD REACTION =====
   socket.on('add-reaction', async ({ roomId, messageId, emoji }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -479,12 +534,38 @@ io.on('connection', (socket) => {
         
         io.to(roomId).emit('update-reactions', { messageId, reactions: msg.reactions });
       }
-    } catch (err) {
-      console.error('Add reaction error:', err);
+    } catch (error) {
+      console.error('❌ Add reaction error:', error);
     }
   });
   
-  // PIN MESSAGE
+  // ===== VOTE =====
+  socket.on('vote', async ({ roomId, messageId, optionIndex }) => {
+    try {
+      const activeRoom = activeRooms.get(roomId);
+      if (!activeRoom) return;
+      
+      const pollMsg = activeRoom.messages.find(m => m.id === messageId);
+      if (pollMsg && pollMsg.poll) {
+        pollMsg.poll.options[optionIndex].votes += 1;
+        
+        const room = await Room.findOne({ roomId });
+        if (room) {
+          const dbMsg = room.messages.find(m => m.id === messageId);
+          if (dbMsg) {
+            dbMsg.poll = pollMsg.poll;
+            await room.save();
+          }
+        }
+        
+        io.to(roomId).emit('update-poll', { messageId, poll: pollMsg.poll });
+      }
+    } catch (error) {
+      console.error('❌ Vote error:', error);
+    }
+  });
+  
+  // ===== PIN MESSAGE =====
   socket.on('pin-message', async ({ roomId, messageId }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -523,12 +604,39 @@ io.on('connection', (socket) => {
       
       io.to(roomId).emit('pinned-history', activeRoom.pinnedMessages);
       socket.emit('notification', '📌 Message pinned successfully!');
-    } catch (err) {
-      console.error('Pin message error:', err);
+    } catch (error) {
+      console.error('❌ Pin message error:', error);
     }
   });
   
-  // CREATE TASK
+  // ===== UNPIN MESSAGE =====
+  socket.on('unpin-message', async ({ roomId, messageId }) => {
+    try {
+      const activeRoom = activeRooms.get(roomId);
+      if (!activeRoom) return;
+      
+      const user = activeRoom.users.get(socket.id);
+      if (!user || (user.role !== 'ADMIN' && user.role !== 'MANAGER')) {
+        socket.emit('error', 'Not authorized');
+        return;
+      }
+      
+      activeRoom.pinnedMessages = activeRoom.pinnedMessages.filter(m => m.id !== messageId);
+      
+      const room = await Room.findOne({ roomId });
+      if (room) {
+        room.pinnedMessages = activeRoom.pinnedMessages;
+        await room.save();
+      }
+      
+      io.to(roomId).emit('pinned-history', activeRoom.pinnedMessages);
+      socket.emit('notification', '📌 Message unpinned!');
+    } catch (error) {
+      console.error('❌ Unpin message error:', error);
+    }
+  });
+  
+  // ===== CREATE TASK =====
   socket.on('create-task', async ({ roomId, task }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -544,12 +652,12 @@ io.on('connection', (socket) => {
         
         io.to(roomId).emit('task-updated', activeRoom.tasks);
       }
-    } catch (err) {
-      console.error('Create task error:', err);
+    } catch (error) {
+      console.error('❌ Create task error:', error);
     }
   });
   
-  // UPDATE TASK STATUS
+  // ===== UPDATE TASK STATUS =====
   socket.on('update-task-status', async ({ roomId, taskId, newStatus }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -564,12 +672,12 @@ io.on('connection', (socket) => {
         
         io.to(roomId).emit('task-updated', activeRoom.tasks);
       }
-    } catch (err) {
-      console.error('Update task status error:', err);
+    } catch (error) {
+      console.error('❌ Update task status error:', error);
     }
   });
   
-  // DELETE MESSAGE
+  // ===== DELETE MESSAGE =====
   socket.on('delete-message', async ({ roomId, messageId }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -600,12 +708,12 @@ io.on('connection', (socket) => {
       } else {
         socket.emit('error', 'Unauthorized to delete this message');
       }
-    } catch (err) {
-      console.error('Delete message error:', err);
+    } catch (error) {
+      console.error('❌ Delete message error:', error);
     }
   });
   
-  // KICK USER
+  // ===== KICK USER =====
   socket.on('kick-user', async ({ roomId, userIdToKick }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
@@ -640,12 +748,12 @@ io.on('connection', (socket) => {
           });
         }
       }
-    } catch (err) {
-      console.error('Kick user error:', err);
+    } catch (error) {
+      console.error('❌ Kick user error:', error);
     }
   });
   
-  // DISCONNECT
+  // ===== DISCONNECT =====
   socket.on('disconnect', async () => {
     console.log(`🔌 ${socket.username} disconnected`);
     
@@ -704,262 +812,75 @@ io.on('connection', (socket) => {
           break;
         }
       }
-    } catch (err) {
-      console.error('Disconnect error:', err);
+    } catch (error) {
+      console.error('❌ Disconnect error:', error);
     }
   });
 });
 
-// Add these routes in server.js
-
-// ===== CREATE GROUP CHAT =====
-app.post('/api/rooms/create-group', async (req, res) => {
-  try {
-    const { roomName, createdBy, members } = req.body;
-    
-    if (!roomName || !createdBy) {
-      return res.status(400).json({ error: 'Room name and creator required' });
-    }
-    
-    const roomId = Math.random().toString(36).substr(2, 8);
-    
-    const room = new Room({
-      roomId,
-      roomName,
-      roomType: 'group',
-      createdBy,
-      groupAdmins: [createdBy],
-      users: [{
-        username: createdBy,
-        role: 'ADMIN',
-        status: 'online'
-      }]
-    });
-    
-    // Add members
-    if (members && members.length > 0) {
-      members.forEach(member => {
-        if (member !== createdBy) {
-          room.users.push({
-            username: member,
-            role: 'MEMBER',
-            status: 'offline'
-          });
+// ===== SCHEDULED MESSAGES (Cron Job) =====
+cron.schedule('* * * * *', async () => {
+  const now = new Date();
+  for (const [roomId, activeRoom] of activeRooms) {
+    if (activeRoom.scheduledMessages && activeRoom.scheduledMessages.length > 0) {
+      const toSend = [];
+      activeRoom.scheduledMessages = activeRoom.scheduledMessages.filter(msg => {
+        const scheduledTime = new Date(msg.scheduledTime);
+        if (scheduledTime <= now) {
+          toSend.push(msg);
+          return false;
         }
+        return true;
       });
+      
+      if (toSend.length > 0) {
+        try {
+          const room = await Room.findOne({ roomId });
+          if (room) {
+            const newMessages = toSend.map(msg => ({
+              id: `sched-${Date.now()}`,
+              username: msg.username,
+              text: msg.text,
+              time: msg.time,
+              readBy: [],
+              readCount: 0,
+              edited: false,
+              createdAt: new Date()
+            }));
+            room.messages.push(...newMessages);
+            await room.save();
+            
+            newMessages.forEach(msg => {
+              io.to(roomId).emit('receive-message', msg);
+            });
+          }
+        } catch (error) {
+          console.error('❌ Scheduled message error:', error);
+        }
+      }
     }
-    
-    await room.save();
-    
-    res.json({
-      success: true,
-      roomId,
-      roomName,
-      message: 'Group created successfully!'
-    });
-  } catch (err) {
-    console.error('Create group error:', err);
-    res.status(500).json({ error: 'Failed to create group' });
-  }
-});
-
-// ===== ADD MEMBER TO GROUP =====
-app.post('/api/rooms/add-member', async (req, res) => {
-  try {
-    const { roomId, username, adminUsername } = req.body;
-    
-    const room = await Room.findOne({ roomId });
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-    
-    // Check if user is admin
-    if (!room.groupAdmins.includes(adminUsername)) {
-      return res.status(403).json({ error: 'Only admins can add members' });
-    }
-    
-    // Check if user already in group
-    const existing = room.users.find(u => u.username === username);
-    if (existing) {
-      return res.status(400).json({ error: 'User already in group' });
-    }
-    
-    room.users.push({
-      username,
-      role: 'MEMBER',
-      status: 'offline'
-    });
-    
-    await room.save();
-    
-    res.json({
-      success: true,
-      message: `${username} added to group!`
-    });
-  } catch (err) {
-    console.error('Add member error:', err);
-    res.status(500).json({ error: 'Failed to add member' });
-  }
-});
-
-// ===== REMOVE MEMBER FROM GROUP =====
-app.post('/api/rooms/remove-member', async (req, res) => {
-  try {
-    const { roomId, username, adminUsername } = req.body;
-    
-    const room = await Room.findOne({ roomId });
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-    
-    // Check if user is admin
-    if (!room.groupAdmins.includes(adminUsername)) {
-      return res.status(403).json({ error: 'Only admins can remove members' });
-    }
-    
-    // Cannot remove creator
-    if (username === room.createdBy) {
-      return res.status(400).json({ error: 'Cannot remove group creator' });
-    }
-    
-    room.users = room.users.filter(u => u.username !== username);
-    await room.save();
-    
-    res.json({
-      success: true,
-      message: `${username} removed from group!`
-    });
-  } catch (err) {
-    console.error('Remove member error:', err);
-    res.status(500).json({ error: 'Failed to remove member' });
-  }
-});
-
-// ===== PROMOTE TO ADMIN =====
-app.post('/api/rooms/promote-admin', async (req, res) => {
-  try {
-    const { roomId, username, adminUsername } = req.body;
-    
-    const room = await Room.findOne({ roomId });
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-    
-    // Check if user is admin
-    if (!room.groupAdmins.includes(adminUsername)) {
-      return res.status(403).json({ error: 'Only admins can promote' });
-    }
-    
-    // Update user role
-    const user = room.users.find(u => u.username === username);
-    if (user) {
-      user.role = 'ADMIN';
-    }
-    
-    // Add to group admins
-    if (!room.groupAdmins.includes(username)) {
-      room.groupAdmins.push(username);
-    }
-    
-    await room.save();
-    
-    res.json({
-      success: true,
-      message: `${username} promoted to admin!`
-    });
-  } catch (err) {
-    console.error('Promote admin error:', err);
-    res.status(500).json({ error: 'Failed to promote admin' });
-  }
-});
-
-// ===== GENERATE INVITE LINK =====
-app.post('/api/rooms/generate-invite', async (req, res) => {
-  try {
-    const { roomId, createdBy } = req.body;
-    
-    const room = await Room.findOne({ roomId });
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-    
-    const inviteCode = Math.random().toString(36).substr(2, 10);
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days valid
-    
-    const inviteLink = {
-      code: inviteCode,
-      expiresAt,
-      maxUses: 10,
-      uses: 0,
-      createdBy
-    };
-    
-    room.inviteLinks = room.inviteLinks || [];
-    room.inviteLinks.push(inviteLink);
-    await room.save();
-    
-    res.json({
-      success: true,
-      inviteLink: `${process.env.FRONTEND_URL}/join/${roomId}?code=${inviteCode}`,
-      code: inviteCode,
-      expiresAt
-    });
-  } catch (err) {
-    console.error('Generate invite error:', err);
-    res.status(500).json({ error: 'Failed to generate invite' });
-  }
-});
-
-// ===== JOIN VIA INVITE LINK =====
-app.post('/api/rooms/join-invite', async (req, res) => {
-  try {
-    const { roomId, code, username } = req.body;
-    
-    const room = await Room.findOne({ roomId });
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-    
-    const invite = room.inviteLinks?.find(i => i.code === code);
-    if (!invite) {
-      return res.status(400).json({ error: 'Invalid invite link' });
-    }
-    
-    if (new Date() > invite.expiresAt) {
-      return res.status(400).json({ error: 'Invite link expired' });
-    }
-    
-    if (invite.uses >= invite.maxUses) {
-      return res.status(400).json({ error: 'Invite link max uses reached' });
-    }
-    
-    // Add user to group
-    const existing = room.users.find(u => u.username === username);
-    if (!existing) {
-      room.users.push({
-        username,
-        role: 'MEMBER',
-        status: 'offline'
-      });
-    }
-    
-    invite.uses += 1;
-    await room.save();
-    
-    res.json({
-      success: true,
-      message: 'Joined group successfully!'
-    });
-  } catch (err) {
-    console.error('Join invite error:', err);
-    res.status(500).json({ error: 'Failed to join group' });
   }
 });
 
 // ===== START SERVER =====
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 http://localhost:${PORT}`);
-});
+const requestedPort = Number(process.env.PORT) || 5000;
+
+const startServer = (port) => {
+  server.once('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.log(`⚠️ Port ${port} is busy. Trying ${port + 1}...`);
+      startServer(port + 1);
+      return;
+    }
+
+    console.error('❌ Server failed to start:', error);
+    process.exit(1);
+  });
+
+  server.listen(port, () => {
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`📍 http://localhost:${port}`);
+  });
+};
+
+startServer(requestedPort);
