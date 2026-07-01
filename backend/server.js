@@ -710,6 +710,253 @@ io.on('connection', (socket) => {
   });
 });
 
+// Add these routes in server.js
+
+// ===== CREATE GROUP CHAT =====
+app.post('/api/rooms/create-group', async (req, res) => {
+  try {
+    const { roomName, createdBy, members } = req.body;
+    
+    if (!roomName || !createdBy) {
+      return res.status(400).json({ error: 'Room name and creator required' });
+    }
+    
+    const roomId = Math.random().toString(36).substr(2, 8);
+    
+    const room = new Room({
+      roomId,
+      roomName,
+      roomType: 'group',
+      createdBy,
+      groupAdmins: [createdBy],
+      users: [{
+        username: createdBy,
+        role: 'ADMIN',
+        status: 'online'
+      }]
+    });
+    
+    // Add members
+    if (members && members.length > 0) {
+      members.forEach(member => {
+        if (member !== createdBy) {
+          room.users.push({
+            username: member,
+            role: 'MEMBER',
+            status: 'offline'
+          });
+        }
+      });
+    }
+    
+    await room.save();
+    
+    res.json({
+      success: true,
+      roomId,
+      roomName,
+      message: 'Group created successfully!'
+    });
+  } catch (err) {
+    console.error('Create group error:', err);
+    res.status(500).json({ error: 'Failed to create group' });
+  }
+});
+
+// ===== ADD MEMBER TO GROUP =====
+app.post('/api/rooms/add-member', async (req, res) => {
+  try {
+    const { roomId, username, adminUsername } = req.body;
+    
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    
+    // Check if user is admin
+    if (!room.groupAdmins.includes(adminUsername)) {
+      return res.status(403).json({ error: 'Only admins can add members' });
+    }
+    
+    // Check if user already in group
+    const existing = room.users.find(u => u.username === username);
+    if (existing) {
+      return res.status(400).json({ error: 'User already in group' });
+    }
+    
+    room.users.push({
+      username,
+      role: 'MEMBER',
+      status: 'offline'
+    });
+    
+    await room.save();
+    
+    res.json({
+      success: true,
+      message: `${username} added to group!`
+    });
+  } catch (err) {
+    console.error('Add member error:', err);
+    res.status(500).json({ error: 'Failed to add member' });
+  }
+});
+
+// ===== REMOVE MEMBER FROM GROUP =====
+app.post('/api/rooms/remove-member', async (req, res) => {
+  try {
+    const { roomId, username, adminUsername } = req.body;
+    
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    
+    // Check if user is admin
+    if (!room.groupAdmins.includes(adminUsername)) {
+      return res.status(403).json({ error: 'Only admins can remove members' });
+    }
+    
+    // Cannot remove creator
+    if (username === room.createdBy) {
+      return res.status(400).json({ error: 'Cannot remove group creator' });
+    }
+    
+    room.users = room.users.filter(u => u.username !== username);
+    await room.save();
+    
+    res.json({
+      success: true,
+      message: `${username} removed from group!`
+    });
+  } catch (err) {
+    console.error('Remove member error:', err);
+    res.status(500).json({ error: 'Failed to remove member' });
+  }
+});
+
+// ===== PROMOTE TO ADMIN =====
+app.post('/api/rooms/promote-admin', async (req, res) => {
+  try {
+    const { roomId, username, adminUsername } = req.body;
+    
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    
+    // Check if user is admin
+    if (!room.groupAdmins.includes(adminUsername)) {
+      return res.status(403).json({ error: 'Only admins can promote' });
+    }
+    
+    // Update user role
+    const user = room.users.find(u => u.username === username);
+    if (user) {
+      user.role = 'ADMIN';
+    }
+    
+    // Add to group admins
+    if (!room.groupAdmins.includes(username)) {
+      room.groupAdmins.push(username);
+    }
+    
+    await room.save();
+    
+    res.json({
+      success: true,
+      message: `${username} promoted to admin!`
+    });
+  } catch (err) {
+    console.error('Promote admin error:', err);
+    res.status(500).json({ error: 'Failed to promote admin' });
+  }
+});
+
+// ===== GENERATE INVITE LINK =====
+app.post('/api/rooms/generate-invite', async (req, res) => {
+  try {
+    const { roomId, createdBy } = req.body;
+    
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    
+    const inviteCode = Math.random().toString(36).substr(2, 10);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days valid
+    
+    const inviteLink = {
+      code: inviteCode,
+      expiresAt,
+      maxUses: 10,
+      uses: 0,
+      createdBy
+    };
+    
+    room.inviteLinks = room.inviteLinks || [];
+    room.inviteLinks.push(inviteLink);
+    await room.save();
+    
+    res.json({
+      success: true,
+      inviteLink: `${process.env.FRONTEND_URL}/join/${roomId}?code=${inviteCode}`,
+      code: inviteCode,
+      expiresAt
+    });
+  } catch (err) {
+    console.error('Generate invite error:', err);
+    res.status(500).json({ error: 'Failed to generate invite' });
+  }
+});
+
+// ===== JOIN VIA INVITE LINK =====
+app.post('/api/rooms/join-invite', async (req, res) => {
+  try {
+    const { roomId, code, username } = req.body;
+    
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    
+    const invite = room.inviteLinks?.find(i => i.code === code);
+    if (!invite) {
+      return res.status(400).json({ error: 'Invalid invite link' });
+    }
+    
+    if (new Date() > invite.expiresAt) {
+      return res.status(400).json({ error: 'Invite link expired' });
+    }
+    
+    if (invite.uses >= invite.maxUses) {
+      return res.status(400).json({ error: 'Invite link max uses reached' });
+    }
+    
+    // Add user to group
+    const existing = room.users.find(u => u.username === username);
+    if (!existing) {
+      room.users.push({
+        username,
+        role: 'MEMBER',
+        status: 'offline'
+      });
+    }
+    
+    invite.uses += 1;
+    await room.save();
+    
+    res.json({
+      success: true,
+      message: 'Joined group successfully!'
+    });
+  } catch (err) {
+    console.error('Join invite error:', err);
+    res.status(500).json({ error: 'Failed to join group' });
+  }
+});
+
 // ===== START SERVER =====
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

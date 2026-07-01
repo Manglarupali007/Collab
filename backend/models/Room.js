@@ -6,14 +6,27 @@ const RoomSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  roomName: {
+    type: String,
+    default: ''
+  },
+  roomType: {
+    type: String,
+    enum: ['private', 'group'],
+    default: 'private'
+  },
   password: {
     type: String,
-    required: true
+    default: ''
   },
   createdBy: {
     type: String,
     required: true
   },
+  groupAdmins: [{
+    type: String,
+    default: []
+  }],
   users: [{
     username: String,
     socketId: String,
@@ -43,8 +56,14 @@ const RoomSchema = new mongoose.Schema({
     reactions: Object,
     time: String,
     readBy: [String],
-    readCount: Number,
-    edited: Boolean,
+    readCount: {
+      type: Number,
+      default: 0
+    },
+    edited: {
+      type: Boolean,
+      default: false
+    },
     editedAt: String,
     replyTo: Object,
     file: Object,
@@ -78,20 +97,22 @@ const RoomSchema = new mongoose.Schema({
     scheduledTime: Date,
     time: String
   }],
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  inviteLinks: [{
+    code: String,
+    expiresAt: Date,
+    maxUses: Number,
+    uses: {
+      type: Number,
+      default: 0
+    },
+    createdBy: String
+  }],
+  isActive: {
+    type: Boolean,
+    default: true
   }
-});
-
-// Update timestamp on save
-RoomSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+}, {
+  timestamps: true
 });
 
 module.exports = mongoose.model('Room', RoomSchema);
