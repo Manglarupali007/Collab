@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import './Editor.css';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 
@@ -605,7 +606,7 @@ function Editor() {
 
   // ===== RENDER =====
   return (
-    <div style={{
+    <div className="chat-shell" style={{
       height: '100vh',
       background: '#0a0f1e',
       display: 'flex',
@@ -637,7 +638,7 @@ function Editor() {
       )}
 
       {/* Navbar */}
-      <div style={{
+      <div className="chat-topbar" style={{
         background: 'rgba(10,15,30,0.85)',
         backdropFilter: 'blur(16px)',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
@@ -800,9 +801,9 @@ function Editor() {
       </div>
 
       {/* Main Area */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', flexDirection: isMobileDevice ? 'column' : 'row' }}>
+      <div className="chat-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', flexDirection: isMobileDevice ? 'column' : 'row' }}>
         {/* Left Sidebar */}
-        <div style={{
+        <div className="chat-sidebar" style={{
           display: isMobileDevice ? (showMobileSidebar ? 'flex' : 'none') : 'flex',
           width: isMobileDevice ? '100%' : '200px',
           maxHeight: isMobileDevice ? '50%' : '100%',
@@ -959,7 +960,7 @@ function Editor() {
                     <div
                       key={msg.id || i}
                       data-message-id={msg.id}
-                      className="message-item"
+                      className="message-item message-bubble"
                       style={{
                         display: 'flex',
                         marginBottom: isMobileDevice ? '6px' : '8px',
@@ -1140,7 +1141,7 @@ function Editor() {
         </div>
 
         {/* Right Sidebar */}
-        <div style={{
+        <div className="chat-inspector" style={{
           width: isMobileDevice ? '100%' : '280px',
           maxHeight: isMobileDevice ? '200px' : '100%',
           background: '#0a0f1e',
@@ -1297,7 +1298,7 @@ function Editor() {
       </div>
 
       {/* Input Area */}
-      <div style={{
+      <div className="chat-composer" style={{
         background: 'rgba(10,15,30,0.85)',
         backdropFilter: 'blur(16px)',
         borderTop: '1px solid rgba(255,255,255,0.06)',
@@ -1344,14 +1345,14 @@ function Editor() {
 
         {/* Input Form */}
         <form onSubmit={sendMessage} style={{ display: 'flex', alignItems: 'center', gap: isMobileDevice ? '4px' : '8px', maxWidth: '1024px', margin: '0 auto', width: '100%' }}>
-          <label style={{ background: 'none', border: 'none', color: '#6b7280', padding: isMobileDevice ? '4px' : '8px', borderRadius: isMobileDevice ? '8px' : '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobileDevice ? '28px' : '40px', height: isMobileDevice ? '28px' : '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#60a5fa'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+          <label className="action-chip" style={{ background: 'none', border: 'none', color: '#6b7280', padding: isMobileDevice ? '4px' : '8px', borderRadius: isMobileDevice ? '8px' : '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobileDevice ? '28px' : '40px', height: isMobileDevice ? '28px' : '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#60a5fa'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
             <svg viewBox="0 0 24 24" width={isMobileDevice ? "16" : "22"} height={isMobileDevice ? "16" : "22"} fill="currentColor">
               <path d="M11.999 14.942c2.001 0 3.531-1.53 3.531-3.531V4.35c0-2.001-1.53-3.531-3.531-3.531S8.469 2.35 8.469 4.35v7.061c0 2.001 1.53 3.531 3.53 3.531zm6.235-3.531c0 3.531-2.942 6.002-6.235 6.002s-6.235-2.471-6.235-6.002H3.705c0 4.001 3.177 7.296 7.061 7.767V23.5h2.467v-4.324c3.884-.471 7.061-3.766 7.061-7.767h-2.059z"/>
             </svg>
             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
           </label>
 
-          <label style={{ background: 'none', border: 'none', color: '#6b7280', padding: isMobileDevice ? '4px' : '8px', borderRadius: isMobileDevice ? '8px' : '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobileDevice ? '28px' : '40px', height: isMobileDevice ? '28px' : '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#34d399'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+          <label className="action-chip" style={{ background: 'none', border: 'none', color: '#6b7280', padding: isMobileDevice ? '4px' : '8px', borderRadius: isMobileDevice ? '8px' : '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobileDevice ? '28px' : '40px', height: isMobileDevice ? '28px' : '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#34d399'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
             <svg viewBox="0 0 24 24" width={isMobileDevice ? "16" : "22"} height={isMobileDevice ? "16" : "22"} fill="currentColor">
               <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
               <polyline points="13 2 13 9 20 9"/>
@@ -1360,7 +1361,7 @@ function Editor() {
           </label>
 
           <div style={{ position: 'relative' }} ref={emojiPickerRef}>
-            <button type="button" onClick={() => setShowEmojiPicker(prev => !prev)} style={{ background: 'none', border: 'none', color: '#6b7280', padding: isMobileDevice ? '4px' : '8px', borderRadius: isMobileDevice ? '8px' : '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobileDevice ? '28px' : '40px', height: isMobileDevice ? '28px' : '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#fbbf24'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
+            <button type="button" className="action-chip" onClick={() => setShowEmojiPicker(prev => !prev)} style={{ background: 'none', border: 'none', color: '#6b7280', padding: isMobileDevice ? '4px' : '8px', borderRadius: isMobileDevice ? '8px' : '12px', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobileDevice ? '28px' : '40px', height: isMobileDevice ? '28px' : '40px', flexShrink: 0 }} onMouseEnter={(e) => e.currentTarget.style.color = '#fbbf24'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
               <svg viewBox="0 0 24 24" width={isMobileDevice ? "18" : "24"} height={isMobileDevice ? "18" : "24"} fill="currentColor">
                 <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10zM8 9a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm8 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm-4 8c-2.206 0-4-1.794-4-4h2c0 1.103.897 2 2 2s2-.897 2-2h2c0 2.206-1.794 4-4 4z"/>
               </svg>
@@ -1394,6 +1395,7 @@ function Editor() {
             value={message}
             onChange={handleTyping}
             placeholder={replyTo ? `Reply to ${replyTo.username}...` : editingMessage ? "Edit..." : "Message..."}
+            className="composer-input"
             style={{
               flex: 1,
               background: 'rgba(255,255,255,0.06)',

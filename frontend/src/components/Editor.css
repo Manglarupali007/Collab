@@ -1,0 +1,1186 @@
+/* =========================================================
+   NEXUS SECURE CHAT
+   PROFESSIONAL LIGHT UI
+   ========================================================= */
+
+:root {
+  --nx-bg: #f5f7fb;
+  --nx-white: #ffffff;
+
+  --nx-sidebar: #ffffff;
+  --nx-panel: #ffffff;
+  --nx-panel-soft: #f8f9fc;
+
+  --nx-border: #e7eaf0;
+  --nx-border-light: #eef0f4;
+
+  --nx-text: #172033;
+  --nx-text-2: #475569;
+  --nx-muted: #7b8798;
+  --nx-placeholder: #a0a9b8;
+
+  --nx-primary: #4f46e5;
+  --nx-primary-dark: #4338ca;
+  --nx-primary-soft: #eef2ff;
+
+  --nx-success: #16a34a;
+  --nx-success-soft: #ecfdf3;
+
+  --nx-danger: #dc2626;
+  --nx-danger-soft: #fef2f2;
+
+  --nx-warning: #d97706;
+  --nx-warning-soft: #fff7ed;
+
+  --nx-radius: 12px;
+  --nx-radius-sm: 9px;
+
+  --nx-shadow-sm:
+    0 1px 3px rgba(15, 23, 42, 0.06);
+
+  --nx-shadow:
+    0 4px 18px rgba(15, 23, 42, 0.06);
+
+  --nx-shadow-lg:
+    0 12px 35px rgba(15, 23, 42, 0.09);
+}
+
+/* =========================================================
+   GLOBAL
+   ========================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+.chat-shell {
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+
+  background: var(--nx-bg) !important;
+  color: var(--nx-text) !important;
+
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  overflow: hidden;
+}
+
+/* =========================================================
+   TOP BAR
+   ========================================================= */
+
+.chat-topbar {
+  min-height: 64px !important;
+  height: 64px !important;
+
+  padding: 10px 18px !important;
+
+  background: var(--nx-white) !important;
+
+  border-bottom: 1px solid var(--nx-border) !important;
+
+  box-shadow:
+    0 1px 4px rgba(15, 23, 42, 0.04) !important;
+
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+
+  display: flex;
+  align-items: center;
+}
+
+/* =========================================================
+   ROOM LOGO
+   ========================================================= */
+
+.chat-topbar > div:first-child > div:first-child {
+  width: 42px !important;
+  height: 42px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  background:
+    linear-gradient(
+      135deg,
+      #6366f1,
+      #4f46e5
+    ) !important;
+
+  border-radius: 11px !important;
+
+  color: white !important;
+
+  box-shadow:
+    0 5px 14px rgba(79, 70, 229, 0.22) !important;
+}
+
+/* =========================================================
+   ROOM TITLE
+   ========================================================= */
+
+.chat-topbar > div:first-child > div:nth-child(2) > div:first-child {
+  color: var(--nx-text) !important;
+
+  font-size: 14px !important;
+  font-weight: 700 !important;
+
+  letter-spacing: -0.01em;
+}
+
+.chat-topbar > div:first-child > div:nth-child(2) > div:nth-child(2) {
+  color: var(--nx-muted) !important;
+
+  font-size: 11px !important;
+}
+
+/* =========================================================
+   SEARCH BAR
+   ========================================================= */
+
+.chat-topbar input {
+  height: 38px !important;
+
+  background: #f7f8fb !important;
+
+  border: 1px solid var(--nx-border) !important;
+
+  border-radius: 9px !important;
+
+  color: var(--nx-text) !important;
+
+  padding: 0 14px !important;
+
+  font-size: 12px !important;
+
+  outline: none !important;
+
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.chat-topbar input::placeholder {
+  color: var(--nx-placeholder) !important;
+}
+
+.chat-topbar input:focus {
+  background: white !important;
+
+  border-color: rgba(79, 70, 229, 0.55) !important;
+
+  box-shadow:
+    0 0 0 3px rgba(79, 70, 229, 0.08) !important;
+}
+
+/* =========================================================
+   TOPBAR BUTTONS
+   ========================================================= */
+
+.chat-topbar button {
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease !important;
+}
+
+/* Invite */
+
+.chat-topbar button:nth-last-child(2) {
+  background:
+    linear-gradient(
+      135deg,
+      #6366f1,
+      #4f46e5
+    ) !important;
+
+  color: white !important;
+
+  border: none !important;
+
+  border-radius: 9px !important;
+
+  box-shadow:
+    0 5px 14px rgba(79, 70, 229, 0.18) !important;
+}
+
+.chat-topbar button:nth-last-child(2):hover {
+  transform: translateY(-1px);
+
+  box-shadow:
+    0 7px 18px rgba(79, 70, 229, 0.25) !important;
+}
+
+/* Exit */
+
+.chat-topbar button:last-child {
+  background: #fff !important;
+
+  color: #dc2626 !important;
+
+  border: 1px solid #fecaca !important;
+
+  border-radius: 9px !important;
+}
+
+.chat-topbar button:last-child:hover {
+  background: #fef2f2 !important;
+}
+
+/* =========================================================
+   MAIN LAYOUT
+   ========================================================= */
+
+.chat-layout {
+  background: var(--nx-bg) !important;
+}
+
+/* =========================================================
+   LEFT SIDEBAR
+   ========================================================= */
+
+.chat-sidebar {
+  width: 230px !important;
+
+  background: var(--nx-sidebar) !important;
+
+  border-right: 1px solid var(--nx-border) !important;
+
+  color: var(--nx-text) !important;
+}
+
+/* sidebar internal borders */
+
+.chat-sidebar > div {
+  border-color: var(--nx-border) !important;
+}
+
+/* =========================================================
+   STATUS SELECT
+   ========================================================= */
+
+.chat-sidebar select {
+  width: calc(100% - 24px) !important;
+
+  margin: 12px !important;
+
+  min-height: 36px !important;
+
+  background: #f8f9fc !important;
+
+  border: 1px solid var(--nx-border) !important;
+
+  border-radius: 9px !important;
+
+  color: var(--nx-text-2) !important;
+
+  font-size: 12px !important;
+
+  padding: 0 10px !important;
+
+  outline: none !important;
+
+  cursor: pointer !important;
+}
+
+.chat-sidebar select:focus {
+  border-color: rgba(79, 70, 229, 0.5) !important;
+
+  box-shadow:
+    0 0 0 3px rgba(79, 70, 229, 0.07) !important;
+}
+
+/* =========================================================
+   SIDEBAR HEADINGS
+   ========================================================= */
+
+.chat-sidebar span {
+  color: inherit;
+}
+
+/* =========================================================
+   PARTICIPANT ROWS
+   ========================================================= */
+
+.chat-sidebar > div:nth-child(3) > div {
+  margin: 5px 8px !important;
+
+  padding: 10px !important;
+
+  border-radius: 10px !important;
+
+  transition:
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.chat-sidebar > div:nth-child(3) > div:hover {
+  background: #f5f7ff !important;
+
+  transform: translateX(2px);
+}
+
+/* =========================================================
+   AVATARS
+   ========================================================= */
+
+.avatar-label {
+  border: 1px solid rgba(79, 70, 229, 0.10) !important;
+
+  box-shadow:
+    0 3px 8px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* =========================================================
+   CENTER CHAT AREA
+   ========================================================= */
+
+.chat-layout > div:nth-child(2) {
+  background:
+    #f8f9fc !important;
+
+  color: var(--nx-text) !important;
+}
+
+/* =========================================================
+   MESSAGE SCROLL AREA
+   ========================================================= */
+
+.chat-layout > div:nth-child(2) > div {
+  scrollbar-width: thin;
+
+  scrollbar-color:
+    #cbd5e1
+    transparent;
+}
+
+/* =========================================================
+   MESSAGE ITEM
+   ========================================================= */
+
+.message-item {
+  margin-bottom: 14px !important;
+
+  animation:
+    nexusMessageIn
+    0.2s
+    ease-out;
+}
+
+/* =========================================================
+   MESSAGE BUBBLE
+   ========================================================= */
+
+.message-bubble {
+  background: #ffffff !important;
+
+  color: var(--nx-text) !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  border-radius: 14px !important;
+
+  box-shadow:
+    var(--nx-shadow-sm) !important;
+
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease !important;
+}
+
+.message-bubble:hover {
+  border-color:
+    #d9dded !important;
+
+  box-shadow:
+    var(--nx-shadow) !important;
+}
+
+/* =========================================================
+   MESSAGE TEXT
+   ========================================================= */
+
+.message-bubble,
+.message-bubble p,
+.message-bubble div,
+.message-bubble span {
+  color: inherit;
+}
+
+/* links */
+
+.message-bubble a {
+  color: var(--nx-primary) !important;
+
+  font-weight: 600 !important;
+}
+
+.message-bubble a:hover {
+  color: var(--nx-primary-dark) !important;
+}
+
+/* =========================================================
+   CURRENT USER MESSAGE
+   ========================================================= */
+
+/*
+   Inline styles from Editor.js may still define
+   the user's message background.
+   These rules soften the visual appearance.
+*/
+
+.message-item[style*="align-items: flex-end"] .message-bubble {
+  color: white !important;
+
+  background:
+    linear-gradient(
+      135deg,
+      #6366f1,
+      #4f46e5
+    ) !important;
+
+  border-color:
+    rgba(79, 70, 229, 0.20) !important;
+
+  box-shadow:
+    0 5px 15px
+    rgba(79, 70, 229, 0.14) !important;
+}
+
+/* =========================================================
+   MESSAGE ACTION MENU
+   ========================================================= */
+
+.message-item:hover .action-menu {
+  display: flex !important;
+}
+
+.action-menu {
+  background: #ffffff !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  border-radius: 10px !important;
+
+  box-shadow:
+    0 12px 35px
+    rgba(15, 23, 42, 0.13) !important;
+
+  backdrop-filter: none !important;
+}
+
+.action-menu button {
+  color: var(--nx-text-2) !important;
+
+  border-radius: 7px !important;
+
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.action-menu button:hover {
+  background: #f1f3f9 !important;
+
+  color: var(--nx-text) !important;
+}
+
+/* =========================================================
+   REACTIONS
+   ========================================================= */
+
+.message-bubble span[style*="border-radius: 4px"] {
+  background: #f8fafc !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  color: var(--nx-text-2) !important;
+}
+
+/* =========================================================
+   POLLS
+   ========================================================= */
+
+.message-bubble div[style*="rgba(0,0,0,0.2)"] {
+  background: #f8f9fc !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  border-radius: 10px !important;
+}
+
+/* =========================================================
+   COMPOSER
+   ========================================================= */
+
+.chat-composer {
+  background: #ffffff !important;
+
+  border-top:
+    1px solid
+    var(--nx-border) !important;
+
+  padding:
+    12px 18px !important;
+
+  box-shadow:
+    0 -3px 12px
+    rgba(15, 23, 42, 0.035) !important;
+
+  backdrop-filter: none !important;
+}
+
+/* =========================================================
+   COMPOSER INPUT
+   ========================================================= */
+
+.composer-input {
+  min-height: 44px !important;
+
+  background: #f7f8fb !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  border-radius: 11px !important;
+
+  color: var(--nx-text) !important;
+
+  font-size: 13px !important;
+
+  padding:
+    10px 14px !important;
+
+  outline: none !important;
+
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease !important;
+}
+
+.composer-input:focus {
+  background: white !important;
+
+  border-color:
+    rgba(79, 70, 229, 0.55) !important;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(79, 70, 229, 0.08) !important;
+}
+
+.composer-input::placeholder {
+  color:
+    var(--nx-placeholder) !important;
+}
+
+/* =========================================================
+   COMPOSER BUTTONS
+   ========================================================= */
+
+.chat-composer button {
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease !important;
+}
+
+.chat-composer button:hover {
+  transform: translateY(-1px);
+}
+
+/* send button */
+
+.chat-composer button:last-child {
+  background:
+    linear-gradient(
+      135deg,
+      #6366f1,
+      #4f46e5
+    ) !important;
+
+  border: none !important;
+
+  color: white !important;
+
+  box-shadow:
+    0 6px 15px
+    rgba(79, 70, 229, 0.18) !important;
+}
+
+/* =========================================================
+   ACTION CHIPS
+   ========================================================= */
+
+.action-chip {
+  background: #ffffff !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  color:
+    var(--nx-text-2) !important;
+
+  border-radius: 9px !important;
+}
+
+.action-chip:hover {
+  background:
+    var(--nx-primary-soft) !important;
+
+  border-color:
+    #c7d2fe !important;
+
+  color:
+    var(--nx-primary) !important;
+}
+
+/* =========================================================
+   RIGHT INSPECTOR
+   ========================================================= */
+
+.chat-inspector {
+  width: 300px !important;
+
+  background:
+    #ffffff !important;
+
+  border-left:
+    1px solid
+    var(--nx-border) !important;
+
+  color:
+    var(--nx-text) !important;
+}
+
+/* =========================================================
+   INSPECTOR TABS
+   ========================================================= */
+
+.chat-inspector > div:first-child {
+  background:
+    #ffffff !important;
+
+  border-bottom:
+    1px solid
+    var(--nx-border) !important;
+}
+
+.chat-inspector > div:first-child button {
+  color:
+    #94a3b8 !important;
+
+  font-size: 11px !important;
+
+  font-weight: 700 !important;
+
+  transition:
+    color 0.18s ease,
+    background 0.18s ease;
+}
+
+.chat-inspector > div:first-child button:hover {
+  color:
+    var(--nx-primary) !important;
+}
+
+/* active tab */
+
+.chat-inspector > div:first-child button[style*="#60a5fa"] {
+  color:
+    var(--nx-primary) !important;
+}
+
+/* =========================================================
+   INSPECTOR CARDS
+   ========================================================= */
+
+.chat-inspector > div:not(:first-child) {
+  color:
+    var(--nx-text-2);
+}
+
+/* generic cards */
+
+.chat-inspector div[style*="border-radius"] {
+  border-color:
+    var(--nx-border) !important;
+}
+
+/* =========================================================
+   EMPTY STATE
+   ========================================================= */
+
+.chat-layout > div:nth-child(2) div {
+  /* keep inherited light theme */
+}
+
+/* =========================================================
+   PINNED / TASK / STATS AREA
+   ========================================================= */
+
+.chat-inspector button {
+  font-family: inherit !important;
+}
+
+/* =========================================================
+   INPUTS INSIDE INSPECTOR
+   ========================================================= */
+
+.chat-inspector input,
+.chat-inspector textarea,
+.chat-inspector select {
+  background:
+    #f8f9fc !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  color:
+    var(--nx-text) !important;
+
+  border-radius:
+    9px !important;
+
+  outline:
+    none !important;
+}
+
+.chat-inspector input:focus,
+.chat-inspector textarea:focus,
+.chat-inspector select:focus {
+  border-color:
+    rgba(79, 70, 229, 0.5) !important;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(79, 70, 229, 0.07) !important;
+}
+
+/* =========================================================
+   GENERAL BUTTONS
+   ========================================================= */
+
+.chat-shell button {
+  font-family: inherit !important;
+}
+
+/* =========================================================
+   SUCCESS STATUS
+   ========================================================= */
+
+.nexus-live-status {
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 7px;
+
+  padding:
+    5px 9px;
+
+  border-radius:
+    999px;
+
+  background:
+    var(--nx-success-soft);
+
+  border:
+    1px solid
+    #bbf7d0;
+
+  color:
+    #15803d;
+
+  font-size:
+    10px;
+
+  font-weight:
+    700;
+}
+
+.nexus-live-status span {
+  width:
+    6px;
+
+  height:
+    6px;
+
+  border-radius:
+    50%;
+
+  background:
+    var(--nx-success);
+
+  animation:
+    nexusPulse
+    2s
+    infinite;
+}
+
+/* =========================================================
+   CHAT HEADING
+   ========================================================= */
+
+.nexus-chat-heading {
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    space-between;
+
+  padding:
+    16px 20px;
+
+  border-bottom:
+    1px solid
+    var(--nx-border);
+
+  background:
+    #ffffff;
+}
+
+.nexus-chat-title {
+  font-size:
+    15px;
+
+  font-weight:
+    700;
+
+  color:
+    var(--nx-text);
+}
+
+.nexus-chat-subtitle {
+  margin-top:
+    3px;
+
+  font-size:
+    11px;
+
+  color:
+    var(--nx-muted);
+}
+
+/* =========================================================
+   BADGES
+   ========================================================= */
+
+.chat-shell span[style*="background: rgb(34, 197, 94)"],
+.chat-shell span[style*="#22c55e"] {
+  color:
+    #15803d !important;
+}
+
+/* =========================================================
+   TOAST
+   ========================================================= */
+
+.chat-shell > div[style*="z-index: 9999"] {
+  background:
+    #ffffff !important;
+
+  color:
+    var(--nx-text) !important;
+
+  border:
+    1px solid
+    var(--nx-border) !important;
+
+  border-radius:
+    12px !important;
+
+  box-shadow:
+    0 15px 45px
+    rgba(15, 23, 42, 0.14) !important;
+
+  backdrop-filter:
+    none !important;
+}
+
+/* =========================================================
+   FILE PREVIEW
+   ========================================================= */
+
+.chat-shell img {
+  border-radius:
+    10px;
+}
+
+/* =========================================================
+   LINKS / URL PREVIEWS
+   ========================================================= */
+
+.chat-shell a {
+  text-decoration:
+    none;
+}
+
+.chat-shell a:hover {
+  text-decoration:
+    underline;
+}
+
+/* =========================================================
+   SCROLLBARS
+   ========================================================= */
+
+.chat-shell *::-webkit-scrollbar {
+  width:
+    6px;
+
+  height:
+    6px;
+}
+
+.chat-shell *::-webkit-scrollbar-track {
+  background:
+    transparent;
+}
+
+.chat-shell *::-webkit-scrollbar-thumb {
+  background:
+    #d1d5db;
+
+  border-radius:
+    20px;
+}
+
+.chat-shell *::-webkit-scrollbar-thumb:hover {
+  background:
+    #aeb6c3;
+}
+
+/* =========================================================
+   FOCUS ACCESSIBILITY
+   ========================================================= */
+
+.chat-shell button:focus-visible,
+.chat-shell input:focus-visible,
+.chat-shell textarea:focus-visible,
+.chat-shell select:focus-visible {
+  outline:
+    2px solid
+    rgba(79, 70, 229, 0.35);
+
+  outline-offset:
+    2px;
+}
+
+/* =========================================================
+   ANIMATIONS
+   ========================================================= */
+
+@keyframes nexusMessageIn {
+  from {
+    opacity:
+      0;
+
+    transform:
+      translateY(5px);
+  }
+
+  to {
+    opacity:
+      1;
+
+    transform:
+      translateY(0);
+  }
+}
+
+@keyframes nexusPulse {
+  0% {
+    box-shadow:
+      0 0 0 0
+      rgba(22, 163, 74, 0.25);
+  }
+
+  70% {
+    box-shadow:
+      0 0 0 6px
+      rgba(22, 163, 74, 0);
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 0
+      rgba(22, 163, 74, 0);
+  }
+}
+
+/* =========================================================
+   HOVER POLISH
+   ========================================================= */
+
+.chat-sidebar button:hover,
+.chat-inspector button:hover {
+  transition:
+    all 0.18s ease;
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 1100px) {
+
+  .chat-inspector {
+    width:
+      270px !important;
+  }
+
+  .chat-sidebar {
+    width:
+      210px !important;
+  }
+}
+
+@media (max-width: 900px) {
+
+  .chat-sidebar {
+    width:
+      100% !important;
+  }
+
+  .chat-inspector {
+    width:
+      100% !important;
+  }
+
+  .chat-topbar {
+    min-height:
+      60px !important;
+
+    height:
+      60px !important;
+
+    padding:
+      8px 12px !important;
+  }
+
+  .chat-composer {
+    padding:
+      10px 12px !important;
+  }
+
+  .message-bubble {
+    border-radius:
+      13px !important;
+  }
+}
+
+@media (max-width: 600px) {
+
+  .chat-topbar {
+    min-height:
+      56px !important;
+
+    height:
+      56px !important;
+
+    padding:
+      7px 10px !important;
+  }
+
+  .chat-topbar input {
+    display:
+      none !important;
+  }
+
+  .chat-composer {
+    padding:
+      8px !important;
+  }
+
+  .composer-input {
+    min-height:
+      40px !important;
+
+    font-size:
+      13px !important;
+  }
+
+  .message-item {
+    margin-bottom:
+      9px !important;
+  }
+
+  .message-bubble {
+    border-radius:
+      12px !important;
+  }
+}
+
+/* =========================================================
+   CLEANUP
+   ========================================================= */
+
+/* Remove excessive glow effects from inline styles */
+
+.chat-shell [style*="box-shadow: 0 0 40px"],
+.chat-shell [style*="box-shadow: 0 0 50px"] {
+  box-shadow:
+    var(--nx-shadow) !important;
+}
+
+/* Keep room visually clean */
+
+.chat-shell hr {
+  border:
+    0 !important;
+
+  border-top:
+    1px solid
+    var(--nx-border) !important;
+}
+
+/* =========================================================
+   FINAL POLISH
+   ========================================================= */
+
+.chat-shell input,
+.chat-shell textarea,
+.chat-shell select {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    sans-serif !important;
+}
+
+.chat-shell ::selection {
+  background:
+    rgba(79, 70, 229, 0.18);
+
+  color:
+    var(--nx-text);
+}
