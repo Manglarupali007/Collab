@@ -3,11 +3,16 @@ services:
   - type: web
     name: nexus-backend
     env: node
-    buildCommand: npm install
-    startCommand: node backend/server.js
+    buildCommand: npm install --prefix backend
+    startCommand: npm --prefix backend start
+    healthCheckPath: /health
     envVars:
       - key: JWT_SECRET
         generateValue: true
+      - key: MONGODB_URI
+        sync: false
       - key: FRONTEND_URL
-        value: https://nexus-collab.vercel.app
+        sync: false
+      - key: NODE_ENV
+        value: production
     plan: free

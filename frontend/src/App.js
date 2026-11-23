@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './components/Home';
 import Editor from './components/Editor';
+import DirectMessages from './components/DirectMessages';
 import './index.css';
 
 class ErrorBoundary extends React.Component {
@@ -42,6 +43,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/messages" element={<DirectMessages />} />
           <Route path="/editor/:roomId" element={<Editor />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

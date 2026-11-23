@@ -5,29 +5,45 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
+const mongoose = require('mongoose');
+const multer = require('multer');
+const path = require('path');
 
 // ===== IMPORT DATABASE =====
 const connectDB = require('./config/database');
 const User = require('./models/User');
 const Room = require('./models/Room');
+const DirectConversation = require('./models/DirectConversation');
+const DirectMessage = require('./models/DirectMessage');
+const { getMediaType, validateMediaFile } = require('./services/mediaValidation');
+const {
+  applyMove,
+  createInitialGame,
+  getWinningMark,
+  serializeGame
+} = require('./services/ticTacToe');
 
 const app = express();
 
 // ===== CORS =====
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "https://*.vercel.app"
-];
+const allowedOrigins = new Set([
+  'http://localhost:3000',
+  'http://localhost:3001',
+  ...(process.env.FRONTEND_URL || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+]);
+
+const checkOrigin = (origin, callback) => {
+  if (!origin || allowedOrigins.has(origin)) {
+    return callback(null, true);
+  }
+  return callback(new Error('Not allowed by CORS'));
+};
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin) || origin?.endsWith(".vercel.app")) {
-      return callback(null, true);
-    }
-    return callback(new Error("Not allowed by CORS"));
-  },
+  origin: checkOrigin,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
@@ -36,19 +52,53 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+app.get('/health', (req, res) => {
+  const databaseConnected = mongoose.connection.readyState === 1;
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? 'ok' : 'unavailable',
+    database: databaseConnected ? 'connected' : 'disconnected'
+  });
+});
+
+const requireDatabase = (req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ error: 'Database unavailable. Start MongoDB and try again.' });
+  }
+
+  next();
+};
+
+app.use('/api', requireDatabase);
+
 const server = http.createServer(app);
 const JWT_SECRET = process.env.JWT_SECRET || 'nexus_super_secret_key_2024';
+
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be configured in production');
+}
+
+const authenticateToken = (req, res, next) => {
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ')
+    ? authorization.slice(7)
+    : null;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
 
 // ===== SOCKET.IO =====
 const io = socketIo(server, {
   cors: {
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || origin?.endsWith(".vercel.app")) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
+    origin: checkOrigin,
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -59,6 +109,104 @@ connectDB();
 
 // ===== IN-MEMORY CACHE =====
 const activeRooms = new Map();
+const directConversationRoom = id => `direct:${id}`;
+const userSocketRoom = id => `user:${id}`;
+const acknowledgeSocketEvent = (acknowledge, payload) => {
+  if (typeof acknowledge === 'function') acknowledge(payload);
+};
+const MAX_DIRECT_MEDIA_SIZE = 20 * 1024 * 1024;
+const directMediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_DIRECT_MEDIA_SIZE, files: 1 },
+  fileFilter: (req, file, callback) => {
+    try {
+      req.uploadMediaType = getMediaType(file);
+      callback(null, true);
+    } catch (error) {
+      callback(error);
+    }
+  }
+});
+
+const serializeDirectMessage = (message, conversationId) => {
+  const media = message.media;
+  const fileId = media?.fileId ? String(media.fileId) : null;
+  return {
+    id: String(message._id),
+    senderId: String(message.sender),
+    username: message.username,
+    text: message.text || '',
+    media: fileId ? {
+      fileId,
+      fileName: media.fileName,
+      mimeType: media.mimeType,
+      mediaType: media.mediaType,
+      size: media.size,
+      url: `/api/conversations/${conversationId}/media/${fileId}`
+    } : null,
+    createdAt: message.createdAt
+  };
+};
+
+const publishDirectMessage = (conversation, storedMessage) => {
+  const conversationId = String(conversation._id);
+  const message = serializeDirectMessage(storedMessage, conversationId);
+  io.to(directConversationRoom(conversationId)).emit('direct-message', {
+    conversationId,
+    message
+  });
+  conversation.participants.forEach(participantId => {
+    io.to(userSocketRoom(participantId)).emit('inbox-message', {
+      conversationId,
+      message
+    });
+  });
+  return message;
+};
+
+const findAuthorizedConversation = async (req, res, next) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.conversationId)) {
+    return res.status(400).json({ error: 'Invalid conversation ID' });
+  }
+
+  try {
+    const conversation = await DirectConversation.findOne({
+      _id: req.params.conversationId,
+      participants: req.user.userId
+    }).select('_id participants');
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    req.directConversation = conversation;
+    next();
+  } catch (error) {
+    console.error('❌ Media conversation lookup error:', error);
+    res.status(500).json({ error: 'Unable to access conversation media' });
+  }
+};
+
+const parseDirectMediaUpload = (req, res, next) => {
+  directMediaUpload.single('media')(req, res, error => {
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'Attachments must be 20 MB or smaller' });
+    }
+    if (error) {
+      return res.status(400).json({ error: error.message || 'Invalid attachment' });
+    }
+    next();
+  });
+};
+
+const sanitizeMediaFileName = fileName => path.basename(String(fileName || '').replace(/\\/g, '/'))
+  .replace(/[\u0000-\u001f\u007f]/g, '')
+  .trim()
+  .slice(0, 180) || 'attachment';
+
+const mediaPreviewText = media => {
+  if (media.mediaType === 'image') return '📷 Photo';
+  if (media.mediaType === 'video') return '🎥 Video';
+  return `📎 ${media.fileName}`;
+};
 
 // ===== SOCKET AUTH =====
 io.use((socket, next) => {
@@ -86,18 +234,25 @@ io.use((socket, next) => {
 // ===== REGISTER =====
 app.post('/api/register', async (req, res) => {
   try {
-    console.log('📝 Register request:', req.body);
-    
-    const { username, password } = req.body;
-    
+    const username = typeof req.body.username === 'string'
+      ? req.body.username.trim()
+      : '';
+    const password = typeof req.body.password === 'string'
+      ? req.body.password
+      : '';
+
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password required' });
     }
-    
+
+    if (username.length < 3 || username.length > 30) {
+      return res.status(400).json({ error: 'Username must be between 3 and 30 characters' });
+    }
+
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
-    
+
     // Check if user exists
     const existingUser = await User.findOne({ username });
     if (existingUser) {
@@ -105,10 +260,7 @@ app.post('/api/register', async (req, res) => {
     }
     
     // Create user
-    const user = new User({
-      username: username.trim(),
-      password: password
-    });
+    const user = new User({ username, password });
     
     await user.save();
     
@@ -120,6 +272,9 @@ app.post('/api/register', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Register error:', error);
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -127,8 +282,6 @@ app.post('/api/register', async (req, res) => {
 // ===== LOGIN =====
 app.post('/api/login', async (req, res) => {
   try {
-    console.log('🔑 Login request:', req.body);
-    
     const { username, password } = req.body;
     
     if (!username || !password) {
@@ -185,7 +338,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // ===== GET USER PROFILE =====
-app.get('/api/user/:username', async (req, res) => {
+app.get('/api/user/:username', authenticateToken, async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username });
     if (!user) {
@@ -205,8 +358,12 @@ app.get('/api/user/:username', async (req, res) => {
 });
 
 // ===== UPDATE USER PROFILE =====
-app.put('/api/user/:username', async (req, res) => {
+app.put('/api/user/:username', authenticateToken, async (req, res) => {
   try {
+    if (req.user.username !== req.params.username) {
+      return res.status(403).json({ error: 'You can only update your own profile' });
+    }
+
     const { avatar, bio } = req.body;
     const user = await User.findOne({ username: req.params.username });
     if (!user) {
@@ -231,13 +388,499 @@ app.put('/api/user/:username', async (req, res) => {
   }
 });
 
+// ===== DIRECT MESSAGES =====
+app.get('/api/users', authenticateToken, async (req, res) => {
+  try {
+    const search = String(req.query.q || '').trim().slice(0, 30);
+    const filter = { username: { $ne: req.user.username } };
+
+    if (search) {
+      filter.username.$regex = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.username.$options = 'i';
+    }
+
+    const users = await User.find(filter)
+      .select('username avatar bio isOnline status')
+      .sort({ username: 1 })
+      .limit(50)
+      .lean();
+
+    res.json({ users });
+  } catch (error) {
+    console.error('❌ User directory error:', error);
+    res.status(500).json({ error: 'Unable to load users' });
+  }
+});
+
+app.get('/api/conversations', authenticateToken, async (req, res) => {
+  try {
+    const conversations = await DirectConversation.find({
+      participants: req.user.userId
+    })
+      .populate('participants', 'username avatar bio isOnline status')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    res.json({
+      conversations: conversations.map(conversation => ({
+        id: conversation._id,
+        updatedAt: conversation.updatedAt,
+        otherUser: conversation.participants.find(
+          participant => String(participant._id) !== String(req.user.userId)
+        ),
+        lastMessage: conversation.lastMessage || null
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Conversation list error:', error);
+    res.status(500).json({ error: 'Unable to load conversations' });
+  }
+});
+
+app.post('/api/conversations', authenticateToken, async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    if (!username) {
+      return res.status(400).json({ error: 'A username is required' });
+    }
+
+    if (username.toLowerCase() === req.user.username.toLowerCase()) {
+      return res.status(400).json({ error: 'You cannot message yourself' });
+    }
+
+    const recipient = await User.findOne({ username }).select('_id username avatar bio isOnline status');
+    if (!recipient) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const participants = [String(req.user.userId), String(recipient._id)].sort();
+    const participantKey = participants.join(':');
+    let conversation = await DirectConversation.findOne({ participantKey });
+
+    if (!conversation) {
+      try {
+        conversation = await DirectConversation.create({
+          participants,
+          participantKey
+        });
+      } catch (error) {
+        if (error.code !== 11000) throw error;
+        conversation = await DirectConversation.findOne({ participantKey });
+      }
+    }
+
+    res.status(200).json({
+      id: conversation._id,
+      updatedAt: conversation.updatedAt,
+      otherUser: recipient,
+      lastMessage: conversation.lastMessage || null
+    });
+  } catch (error) {
+    console.error('❌ Conversation create error:', error);
+    res.status(500).json({ error: 'Unable to start conversation' });
+  }
+});
+
+app.post(
+  '/api/conversations/:conversationId/media',
+  authenticateToken,
+  findAuthorizedConversation,
+  parseDirectMediaUpload,
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Choose an attachment to send' });
+    }
+
+    const caption = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+    if (caption.length > 4000) {
+      return res.status(400).json({ error: 'Captions must be 4000 characters or fewer' });
+    }
+
+    let mediaType;
+    try {
+      mediaType = validateMediaFile(req.file);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    let fileId;
+    let storedMessage;
+    const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+      bucketName: 'directMedia'
+    });
+
+    try {
+      const fileName = sanitizeMediaFileName(req.file.originalname);
+      const uploadStream = bucket.openUploadStream(fileName, {
+        contentType: req.file.mimetype,
+        metadata: {
+          conversationId: String(req.directConversation._id),
+          senderId: String(req.user.userId),
+          mediaType
+        }
+      });
+      fileId = uploadStream.id;
+      await new Promise((resolve, reject) => {
+        uploadStream.once('error', reject);
+        uploadStream.once('finish', resolve);
+        uploadStream.end(req.file.buffer);
+      });
+
+      storedMessage = await DirectMessage.create({
+        conversation: req.directConversation._id,
+        sender: req.user.userId,
+        username: req.user.username,
+        text: caption,
+        media: {
+          fileId,
+          fileName,
+          mimeType: req.file.mimetype,
+          mediaType,
+          size: req.file.size
+        }
+      });
+      req.directConversation.lastMessage = {
+        sender: req.user.userId,
+        username: req.user.username,
+        text: caption || mediaPreviewText({ mediaType, fileName }),
+        createdAt: storedMessage.createdAt
+      };
+      await req.directConversation.save();
+
+      const message = publishDirectMessage(req.directConversation, storedMessage);
+      res.status(201).json({ message });
+    } catch (error) {
+      if (fileId && !storedMessage) {
+        await bucket.delete(fileId).catch(cleanupError => {
+          console.error('❌ Attachment cleanup error:', cleanupError);
+        });
+      }
+      console.error('❌ Direct media upload error:', error);
+      res.status(500).json({ error: 'Unable to send attachment' });
+    }
+  }
+);
+
+app.get(
+  '/api/conversations/:conversationId/media/:fileId',
+  authenticateToken,
+  findAuthorizedConversation,
+  async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.fileId)) {
+      return res.status(400).json({ error: 'Invalid attachment ID' });
+    }
+
+    try {
+      const fileId = new mongoose.Types.ObjectId(req.params.fileId);
+      const message = await DirectMessage.findOne({
+        conversation: req.directConversation._id,
+        'media.fileId': fileId
+      }).select('media').lean();
+      if (!message?.media) {
+        return res.status(404).json({ error: 'Attachment not found' });
+      }
+
+      const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+        bucketName: 'directMedia'
+      });
+      const downloadStream = bucket.openDownloadStream(fileId);
+      const disposition = message.media.mediaType === 'document' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', message.media.mimeType);
+      res.setHeader('Content-Length', message.media.size);
+      res.setHeader(
+        'Content-Disposition',
+        `${disposition}; filename*=UTF-8''${encodeURIComponent(message.media.fileName)}`
+      );
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      downloadStream.on('error', error => {
+        console.error('❌ Attachment download error:', error);
+        if (!res.headersSent) {
+          res.status(404).json({ error: 'Attachment not found' });
+        } else {
+          res.destroy();
+        }
+      });
+      downloadStream.pipe(res);
+    } catch (error) {
+      console.error('❌ Attachment access error:', error);
+      res.status(500).json({ error: 'Unable to load attachment' });
+    }
+  }
+);
+
+app.get('/api/conversations/:conversationId/messages', authenticateToken, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.conversationId)) {
+      return res.status(400).json({ error: 'Invalid conversation ID' });
+    }
+
+    const conversation = await DirectConversation.findOne({
+      _id: req.params.conversationId,
+      participants: req.user.userId
+    }).select('_id');
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const messages = await DirectMessage.find({
+      conversation: conversation._id
+    }).sort({ createdAt: -1 }).limit(100).lean();
+
+    res.json({
+      messages: messages.reverse().map(message => (
+        serializeDirectMessage(message, String(conversation._id))
+      ))
+    });
+  } catch (error) {
+    console.error('❌ Conversation history error:', error);
+    res.status(500).json({ error: 'Unable to load messages' });
+  }
+});
+
 // ==========================================
 // ===== SOCKET EVENTS =====
 // ==========================================
 
 io.on('connection', (socket) => {
   console.log(`📡 ${socket.username} connected (${socket.id})`);
+  socket.join(userSocketRoom(socket.userId));
+  socket.data.directConversations = new Set();
+
+  socket.on('join-conversation', async (payload, acknowledge) => {
+    try {
+      const conversationId = payload && typeof payload === 'object'
+        ? payload.conversationId
+        : null;
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Invalid conversation ID' });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      }).select('_id');
+
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      const conversationIdString = String(conversation._id);
+      socket.join(directConversationRoom(conversationIdString));
+      socket.data.directConversations.add(conversationIdString);
+      const messages = await DirectMessage.find({
+        conversation: conversation._id
+      }).sort({ createdAt: -1 }).limit(100).lean();
+      acknowledgeSocketEvent(acknowledge, {
+        messages: messages.reverse().map(message => (
+          serializeDirectMessage(message, conversationIdString)
+        ))
+      });
+    } catch (error) {
+      console.error('❌ Join direct conversation error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to open conversation' });
+    }
+  });
+
+  socket.on('load-tic-tac-toe', async (payload, acknowledge) => {
+    const conversationId = String(payload?.conversationId || '');
+    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+      return acknowledgeSocketEvent(acknowledge, { error: 'Invalid conversation ID' });
+    }
+
+    try {
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      }).select('_id participants ticTacToe').populate('participants', 'username');
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      await DirectConversation.updateOne({
+        _id: conversationId,
+        participants: socket.userId,
+        ticTacToe: { $exists: false }
+      }, {
+        $set: { ticTacToe: createInitialGame() }
+      });
+
+      socket.join(directConversationRoom(conversationId));
+      socket.data.directConversations.add(conversationId);
+      acknowledgeSocketEvent(acknowledge, {
+        ticTacToe: serializeGame(conversation.ticTacToe, conversation.participants)
+      });
+    } catch (error) {
+      console.error('❌ Load tic-tac-toe game error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to load game' });
+    }
+  });
+
+  socket.on('leave-conversation', payload => {
+    const id = String(payload?.conversationId || '');
+    if (socket.data.directConversations.has(id)) {
+      socket.leave(directConversationRoom(id));
+      socket.data.directConversations.delete(id);
+    }
+  });
+
+  socket.on('send-direct-message', async (payload, acknowledge) => {
+    try {
+      const { conversationId, text } = payload && typeof payload === 'object'
+        ? payload
+        : {};
+      const cleanText = typeof text === 'string' ? text.trim() : '';
+      if (!cleanText || cleanText.length > 4000) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Message must be between 1 and 4000 characters' });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Invalid conversation ID' });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      });
+
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      const storedMessage = await DirectMessage.create({
+        conversation: conversation._id,
+        sender: socket.userId,
+        username: socket.username,
+        text: cleanText
+      });
+      conversation.lastMessage = {
+        sender: socket.userId,
+        username: socket.username,
+        text: cleanText,
+        createdAt: storedMessage.createdAt
+      };
+      await conversation.save();
+
+      const message = publishDirectMessage(conversation, storedMessage);
+      acknowledgeSocketEvent(acknowledge, { message });
+    } catch (error) {
+      console.error('❌ Direct message error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to send message' });
+    }
+  });
+
+  socket.on('typing-direct', payload => {
+    const id = String(payload?.conversationId || '');
+    if (socket.data.directConversations.has(id)) {
+      socket.to(directConversationRoom(id)).emit('direct-typing', {
+        conversationId: id,
+        username: socket.username
+      });
+    }
+  });
+
+  socket.on('stop-typing-direct', payload => {
+    const id = String(payload?.conversationId || '');
+    if (socket.data.directConversations.has(id)) {
+      socket.to(directConversationRoom(id)).emit('direct-stop-typing', { conversationId: id });
+    }
+  });
   
+  socket.on('tic-tac-toe-move', async (payload, acknowledge) => {
+    const conversationId = String(payload?.conversationId || '');
+    const index = payload?.index;
+    if (
+      !socket.data.directConversations.has(conversationId) ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index > 8
+    ) {
+      return acknowledgeSocketEvent(acknowledge, { error: 'Invalid game move' });
+    }
+
+    try {
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      }).populate('participants', 'username');
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      const move = applyMove(
+        conversation.ticTacToe || createInitialGame(),
+        socket.userId,
+        conversation.participants.map(participant => participant._id),
+        index
+      );
+      if (move.error) {
+        return acknowledgeSocketEvent(acknowledge, { error: move.error });
+      }
+
+      const moveFilter = {
+        _id: conversationId,
+        participants: socket.userId,
+        'ticTacToe.status': move.expectedStatus,
+        [`ticTacToe.board.${index}`]: 0
+      };
+      if (move.expectedStatus === 'playing') {
+        moveFilter['ticTacToe.currentTurn'] = socket.userId;
+      }
+
+      const updatedConversation = await DirectConversation.findOneAndUpdate(
+        moveFilter,
+        { $set: { ticTacToe: move.state } },
+        { new: true, runValidators: true }
+      );
+      if (!updatedConversation) {
+        return acknowledgeSocketEvent(acknowledge, {
+          error: 'This move was already taken or the game changed. Try again.'
+        });
+      }
+
+      const serializedGame = serializeGame(updatedConversation.ticTacToe, conversation.participants);
+      io.to(directConversationRoom(conversationId)).emit('tic-tac-toe-state', {
+        conversationId,
+        game: serializedGame
+      });
+      acknowledgeSocketEvent(acknowledge, { game: serializedGame });
+    } catch (error) {
+      console.error('❌ Tic-tac-toe move error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to save game move' });
+    }
+  });
+
+  socket.on('tic-tac-toe-reset', async (payload, acknowledge) => {
+    const conversationId = String(payload?.conversationId || '');
+    if (!socket.data.directConversations.has(conversationId)) {
+      return acknowledgeSocketEvent(acknowledge, { error: 'Open this conversation before starting a game' });
+    }
+
+    try {
+      const conversation = await DirectConversation.findOneAndUpdate({
+        _id: conversationId,
+        participants: socket.userId
+      }, {
+        $set: { ticTacToe: createInitialGame() }
+      }, { new: true }).populate('participants', 'username');
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      const game = serializeGame(conversation.ticTacToe, conversation.participants);
+      io.to(directConversationRoom(conversationId)).emit('tic-tac-toe-state', {
+        conversationId,
+        game
+      });
+      acknowledgeSocketEvent(acknowledge, { game });
+    } catch (error) {
+      console.error('❌ Tic-tac-toe reset error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to reset game' });
+    }
+  });
+
   // ===== JOIN ROOM =====
   socket.on('join-room', async ({ roomId, password }) => {
     try {
@@ -272,7 +915,8 @@ io.on('connection', (socket) => {
           users: new Map(),
           messages: room.messages || [],
           pinnedMessages: room.pinnedMessages || [],
-          tasks: room.tasks || []
+          tasks: room.tasks || [],
+          scheduledMessages: room.scheduledMessages || []
         });
       }
       
@@ -287,7 +931,7 @@ io.on('connection', (socket) => {
       }
       
       const user = await User.findOne({ username: socket.username });
-      const role = activeRoom.users.size === 0 ? 'ADMIN' : 'MEMBER';
+      const role = room.createdBy === socket.username ? 'ADMIN' : 'MEMBER';
       
       activeRoom.users.set(socket.id, {
         username: socket.username,
@@ -317,6 +961,7 @@ io.on('connection', (socket) => {
       
       socket.emit('message-history', activeRoom.messages);
       socket.emit('pinned-history', activeRoom.pinnedMessages);
+      socket.emit('task-updated', activeRoom.tasks);
       
       io.to(roomId).emit('user-joined', {
         users: Array.from(activeRoom.users.values()),
@@ -331,16 +976,16 @@ io.on('connection', (socket) => {
   });
   
   // ===== SEND MESSAGE =====
-  socket.on('send-message', async ({ roomId, username, text, image, poll, time, id }) => {
+  socket.on('send-message', async ({ roomId, text, image, poll, time, id }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
-      if (!activeRoom) return;
+      if (!activeRoom?.users.has(socket.id)) return;
       
       const messageId = id || (Date.now() + Math.random().toString(36).substr(2, 9));
       
       const messageData = {
         id: messageId,
-        username,
+        username: socket.username,
         text,
         image,
         poll,
@@ -367,8 +1012,10 @@ io.on('connection', (socket) => {
   });
   
   // ===== TYPING =====
-  socket.on('typing', ({ roomId, username }) => {
-    socket.to(roomId).emit('user-typing', { username });
+  socket.on('typing', ({ roomId }) => {
+    if (activeRooms.get(roomId)?.users.has(socket.id)) {
+      socket.to(roomId).emit('user-typing', { username: socket.username });
+    }
   });
   
   socket.on('stop-typing', ({ roomId }) => {
@@ -408,16 +1055,16 @@ io.on('connection', (socket) => {
   });
   
   // ===== REPLY TO MESSAGE =====
-  socket.on('reply-to-message', async ({ roomId, messageId, replyText, username, time }) => {
+  socket.on('reply-to-message', async ({ roomId, messageId, replyText, time }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
-      if (!activeRoom) return;
+      if (!activeRoom?.users.has(socket.id)) return;
       
       const originalMsg = activeRoom.messages.find(m => m.id === messageId);
       if (originalMsg) {
         const replyData = {
           id: `reply-${Date.now()}`,
-          username,
+          username: socket.username,
           text: replyText,
           time,
           readBy: [],
@@ -446,14 +1093,14 @@ io.on('connection', (socket) => {
   });
   
   // ===== SHARE FILE =====
-  socket.on('share-file', async ({ roomId, username, fileName, fileData, fileType, fileSize, time }) => {
+  socket.on('share-file', async ({ roomId, fileName, fileData, fileType, fileSize, time }) => {
     try {
       const activeRoom = activeRooms.get(roomId);
-      if (!activeRoom) return;
+      if (!activeRoom?.users.has(socket.id)) return;
       
       const fileMessage = {
         id: `file-${Date.now()}`,
-        username,
+        username: socket.username,
         text: `📎 ${fileName}`,
         file: {
           name: fileName,
@@ -479,6 +1126,66 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('receive-message', fileMessage);
     } catch (error) {
       console.error('❌ File share error:', error);
+    }
+  });
+
+  // ===== READ RECEIPTS =====
+  socket.on('message-read', async ({ roomId, messageId }) => {
+    try {
+      const activeRoom = activeRooms.get(roomId);
+      if (!activeRoom?.users.has(socket.id)) return;
+
+      const message = activeRoom.messages.find(item => item.id === messageId);
+      if (!message) return;
+
+      message.readBy = Array.isArray(message.readBy) ? message.readBy : [];
+      if (!message.readBy.includes(socket.username)) {
+        message.readBy.push(socket.username);
+        message.readCount = message.readBy.length;
+
+        const room = await Room.findOne({ roomId });
+        const dbMessage = room?.messages.find(item => item.id === messageId);
+        if (dbMessage) {
+          dbMessage.readBy = message.readBy;
+          dbMessage.readCount = message.readCount;
+          await room.save();
+        }
+      }
+
+      io.to(roomId).emit('read-receipt', {
+        messageId,
+        readBy: message.readBy,
+        readCount: message.readCount
+      });
+    } catch (error) {
+      console.error('❌ Read receipt error:', error);
+    }
+  });
+
+  // ===== UPDATE PROFILE =====
+  socket.on('update-profile', async ({ roomId, avatar, bio }) => {
+    try {
+      const activeRoom = activeRooms.get(roomId);
+      const roomUser = activeRoom?.users.get(socket.id);
+      if (!roomUser) return;
+
+      const user = await User.findOne({ username: socket.username });
+      if (user) {
+        user.avatar = typeof avatar === 'string' ? avatar.slice(0, 3_000_000) : user.avatar;
+        user.bio = typeof bio === 'string' ? bio.trim().slice(0, 280) : user.bio;
+        await user.save();
+      }
+
+      roomUser.avatar = user?.avatar || roomUser.avatar;
+      roomUser.bio = user?.bio || roomUser.bio;
+      io.to(roomId).emit('user-joined', {
+        users: Array.from(activeRoom.users.values()),
+        userId: null
+      });
+      socket.emit('notification', 'Profile updated successfully');
+    } catch (error) {
+      console.error('❌ Update profile error:', error);
+      socket.emit('error', 'Unable to update profile');
     }
   });
   
@@ -758,7 +1465,10 @@ io.on('connection', (socket) => {
     console.log(`🔌 ${socket.username} disconnected`);
     
     try {
-      const user = await User.findOne({ username: socket.username });
+      const remainingSockets = await io.in(userSocketRoom(socket.userId)).fetchSockets();
+      const user = remainingSockets.length === 0
+        ? await User.findOne({ username: socket.username })
+        : null;
       if (user) {
         user.isOnline = false;
         user.status = 'offline';

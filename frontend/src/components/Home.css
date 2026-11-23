@@ -1152,3 +1152,86 @@ body {
     max-width: none;
   }
 }
+
+/* Light product surface */
+body {
+  background: #f4f7fb;
+}
+
+.nexus-page {
+  min-height: 100dvh;
+  padding: clamp(18px, 4vw, 48px);
+  background:
+    linear-gradient(135deg, rgba(224, 231, 255, 0.72), transparent 42%),
+    linear-gradient(315deg, rgba(220, 252, 231, 0.55), transparent 38%),
+    #f4f7fb;
+  color: #152238;
+}
+
+.nexus-glow {
+  filter: blur(110px);
+  opacity: 0.24;
+}
+
+.nexus-glow-one { background: #93c5fd; }
+.nexus-glow-two { background: #86efac; }
+
+.nexus-container {
+  max-width: 1180px;
+  min-height: 620px;
+  padding: clamp(28px, 6vw, 76px);
+  gap: clamp(36px, 7vw, 88px);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 28px;
+  box-shadow: 0 26px 70px rgba(30, 41, 59, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.nexus-title { color: #172033; }
+.nexus-title span {
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.nexus-description { color: #52627a; }
+.nexus-point strong { color: #1f2d43; }
+.nexus-point span, .nexus-security { color: #718096; }
+.point-icon { background: #eff6ff; border-color: #dbeafe; color: #2563eb; }
+.nexus-security { border-top: 1px solid #e2e8f0; padding-top: 18px; }
+
+.nexus-auth-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 18px 48px rgba(30, 41, 59, 0.1);
+  backdrop-filter: none;
+}
+
+.nexus-brand-name { background: linear-gradient(135deg, #2563eb, #4f46e5); -webkit-background-clip: text; background-clip: text; }
+.nexus-brand-tagline, .auth-heading p, .auth-switch, .auth-footer { color: #718096; }
+.auth-heading h2 { color: #172033; }
+.auth-input, .room-input-row input {
+  background: #f8fafc;
+  border-color: #dbe3ee;
+  color: #172033;
+}
+.auth-input::placeholder, .room-input-row input::placeholder { color: #94a3b8; }
+.auth-input:focus, .room-input-row input:focus { background: #ffffff; border-color: #6366f1; }
+.auth-switch button { color: #4f46e5; }
+.logged-user { background: #f8fafc; border-color: #e2e8f0; }
+.logged-user-info span, .room-section label { color: #718096; }
+.logged-user-info strong { color: #172033; }
+.or-divider::before, .or-divider::after { background: #e2e8f0; }
+.or-divider span { color: #94a3b8; }
+.create-room-button { background: #f0fdf4; border-color: #bbf7d0; color: #1f5132; }
+.create-room-button strong { color: #1f5132; }
+.create-room-button small { color: #669477; }
+.logout-button { color: #718096; }
+.nexus-toast { background: #ffffff; border-color: #e2e8f0; color: #334155; box-shadow: 0 16px 40px rgba(30, 41, 59, 0.16); }
+
+@media (max-width: 560px) {
+  .nexus-container { min-height: auto; }
+  .nexus-title { font-size: clamp(38px, 12vw, 48px); }
+  .nexus-hero { text-align: left; }
+  .nexus-points { align-items: flex-start; }
+}

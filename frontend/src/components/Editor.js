@@ -180,7 +180,7 @@ function Editor() {
         playNotificationSound();
         
         // Browser notification
-        if (Notification.permission === 'granted') {
+        if ('Notification' in window && Notification.permission === 'granted') {
           new Notification(`📩 ${data.username}`, {
             body: data.text || 'Sent a message',
             icon: '/favicon.ico'
@@ -300,7 +300,7 @@ function Editor() {
   // ===== HANDLE TYPING =====
   const handleTyping = (e) => {
     setMessage(e.target.value);
-    socket.emit('typing', { roomId, username });
+    socket.emit('typing', { roomId });
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
@@ -350,7 +350,6 @@ function Editor() {
         roomId, 
         messageId: replyTo.id, 
         replyText: message,
-        username,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });
       setMessage('');
@@ -366,7 +365,6 @@ function Editor() {
     const msgId = Date.now() + Math.random().toString(36).substr(2, 9);
     const msgData = { 
       id: msgId,
-      username, 
       text: message, 
       image: imageBase64,
       poll: pollData,
@@ -414,7 +412,6 @@ function Editor() {
       reader.onloadend = () => {
         socket.emit('share-file', {
           roomId,
-          username,
           fileName: file.name,
           fileData: reader.result,
           fileType: file.type,

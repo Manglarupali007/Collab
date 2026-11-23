@@ -74,9 +74,9 @@ function Home() {
     const token = localStorage.getItem('token');
 
     if (token) {
-      setIsLoggedIn(true);
+      navigate('/messages', { replace: true });
     }
-  }, []);
+  }, [navigate]);
 
   /* =========================
      TOAST
@@ -137,12 +137,7 @@ function Home() {
           response.data.username
         );
 
-        setIsLoggedIn(true);
-
-        showToast(
-          `Welcome back, ${response.data.username}!`,
-          'success'
-        );
+        navigate('/messages');
       }
     } catch (error) {
       showToast(
@@ -272,19 +267,19 @@ function Home() {
 
           <div className="nexus-eyebrow">
             <span className="eyebrow-dot" />
-            Secure collaboration
+            Private conversations
           </div>
 
           <h1 className="nexus-title">
-            Conversations
+            One-to-one
             <br />
-            that move
-            <span> work forward.</span>
+            conversations,
+            <span> in real time.</span>
           </h1>
 
           <p className="nexus-description">
-            A private space for real-time conversations,
-            collaboration, and focused teamwork.
+            Find someone, start a private chat, and stay connected with
+            fast, live messaging that feels effortless.
           </p>
 
           <div className="nexus-points">
@@ -292,24 +287,24 @@ function Home() {
             <div className="nexus-point">
               <div className="point-icon">⌁</div>
               <div>
-                <strong>Real-time</strong>
-                <span>Instant conversations</span>
+                <strong>Live messaging</strong>
+                <span>Messages arrive instantly</span>
               </div>
             </div>
 
             <div className="nexus-point">
               <div className="point-icon">⌕</div>
               <div>
-                <strong>Private rooms</strong>
-                <span>Protected collaboration</span>
+                <strong>One-to-one</strong>
+                <span>Conversations stay between you</span>
               </div>
             </div>
 
             <div className="nexus-point">
               <div className="point-icon">✓</div>
               <div>
-                <strong>Built for focus</strong>
-                <span>Everything in one place</span>
+                <strong>Responsive by design</strong>
+                <span>Chat smoothly on any screen</span>
               </div>
             </div>
 
@@ -317,9 +312,9 @@ function Home() {
 
           <div className="nexus-security">
             <span className="security-lock">●</span>
-            Private by design
+            Private direct messages
             <span className="security-separator">•</span>
-            Built for teams
+            Powered by Socket.IO
           </div>
 
         </div>
@@ -367,7 +362,7 @@ function Home() {
 
                   <p>
                     {isSignup
-                      ? 'Start collaborating with your team.'
+                      ? 'Create an account to start private conversations.'
                       : 'Sign in to continue to your workspace.'}
                   </p>
                 </div>
@@ -490,12 +485,11 @@ function Home() {
 
                 <div className="auth-heading">
                   <h2>
-                    Your workspace
+                    Your conversations
                   </h2>
 
                   <p>
-                    Join an existing room or create
-                    a private space.
+                    Start a private one-to-one chat or open a room.
                   </p>
                 </div>
 
@@ -520,6 +514,23 @@ function Home() {
                     Online
                   </span>
 
+                </div>
+
+                <button
+                  type="button"
+                  className="create-room-button"
+                  onClick={() => navigate('/messages')}
+                >
+                  <span className="create-icon">✳</span>
+                  <span>
+                    <strong>Open direct messages</strong>
+                    <small>Find people and chat privately</small>
+                  </span>
+                  <span className="create-arrow">→</span>
+                </button>
+
+                <div className="or-divider">
+                  <span>OR JOIN A ROOM</span>
                 </div>
 
                 {/* Join */}
