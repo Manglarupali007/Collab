@@ -8,7 +8,7 @@ const fileTypes = {
   '.gif': { mediaType: 'image', mimeTypes: ['image/gif'] },
   '.webp': { mediaType: 'image', mimeTypes: ['image/webp'] },
   '.mp4': { mediaType: 'video', mimeTypes: ['video/mp4'] },
-  '.webm': { mediaType: 'video', mimeTypes: ['video/webm'] },
+  '.webm': { mediaType: 'video', mimeTypes: ['video/webm', 'audio/webm'] },
   '.pdf': { mediaType: 'document', mimeTypes: ['application/pdf'] },
   '.doc': { mediaType: 'document', mimeTypes: ['application/msword'] },
   '.docx': {
@@ -35,7 +35,7 @@ function getMediaType(file) {
   if (!definition || !definition.mimeTypes.includes(file.mimetype)) {
     throw new Error('Unsupported file type. Choose an image, video, or document.');
   }
-  return definition.mediaType;
+  return file.mimetype.startsWith('audio/') ? 'audio' : definition.mediaType;
 }
 
 function hasValidSignature(file, extension) {

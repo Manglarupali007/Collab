@@ -27,6 +27,27 @@ const DirectConversationSchema = new mongoose.Schema({
     text: String,
     createdAt: Date
   },
+  readReceipts: {
+    type: [{
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+      },
+      lastReadAt: {
+        type: Date,
+        required: true
+      }
+    }],
+    default: []
+  },
+  pinnedMessages: {
+    type: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DirectMessage'
+    }],
+    default: []
+  },
   ticTacToe: {
     type: new mongoose.Schema({
       board: {

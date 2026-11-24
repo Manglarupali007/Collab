@@ -16,7 +16,7 @@ const DirectMessageMediaSchema = new mongoose.Schema({
   },
   mediaType: {
     type: String,
-    enum: ['image', 'video', 'document'],
+    enum: ['image', 'video', 'audio', 'document'],
     required: true
   },
   size: {
@@ -50,11 +50,32 @@ const DirectMessageSchema = new mongoose.Schema({
   media: {
     type: DirectMessageMediaSchema,
     default: undefined
-  }
+  },
+  reactions: {
+    type: Map,
+    of: {
+      type: Number,
+      min: 0
+    },
+    default: {}
+  },
+  replyTo: {
+    messageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DirectMessage'
+    },
+    username: String,
+    text: {
+      type: String,
+      maxlength: 200
+    }
+  },
+  editedAt: Date,
+  deletedAt: Date
 }, { timestamps: true });
 
 DirectMessageSchema.pre('validate', function validateTextOrMedia() {
-  if (!this.text && !this.media?.fileId) {
+  if (!this.deletedAt && !this.text && !this.media?.fileId) {
     this.invalidate('text', 'A message must contain text or an attachment');
   }
 });

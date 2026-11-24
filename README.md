@@ -8,6 +8,12 @@ Nexus is a real-time messaging application for private one-to-one conversations.
 * 💬 Private One-to-One Conversations
 * 👥 User discovery and recent conversations
 * 🔄 Persisted chat history with live delivery and typing indicators
+* ↩ Reply to a specific message with its context
+* 🔔 Per-conversation unread counts and read receipts
+* ✏️ Edit and soft-delete your own messages
+* 🔎 Search conversation history and shared file names
+* 🎙 Record and send WebM voice notes
+* 📌 Pin and unpin important direct messages
 * ↩ Close the current chat and return to the inbox without deleting its history
 * 👁 Quick privacy screen with a one-tap and keyboard shortcut toggle
 * 👥 Password-Protected Collaboration Rooms
@@ -38,7 +44,7 @@ The included deployment configuration targets Render for the API/Socket.IO serve
 2. Provide `MONGODB_URI` with a MongoDB Atlas connection string and `FRONTEND_URL` with the deployed frontend origin. Multiple allowed origins can be comma-separated.
 3. Render generates `JWT_SECRET`; keep it and the MongoDB connection string private.
 4. The service exposes `/health`, which checks both the server and MongoDB connection.
-Direct-message attachments use MongoDB GridFS, so they persist with the configured MongoDB database rather than the service's local disk. Uploads are limited to 20 MB per file and support PNG/JPEG/GIF/WebP images, MP4/WebM video, and PDF/Office/TXT/CSV documents.
+Direct-message attachments use MongoDB GridFS, so they persist with the configured MongoDB database rather than the service's local disk. Uploads are limited to 20 MB per file and support PNG/JPEG/GIF/WebP images, MP4/WebM video, WebM audio, and PDF/Office/TXT/CSV documents.
 
 ### Frontend (Vercel)
 

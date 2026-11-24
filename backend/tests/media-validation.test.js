@@ -32,3 +32,17 @@ test('media uploads validate file signatures and text encoding', () => {
     buffer: Buffer.from('Hello Nexus', 'utf8')
   }), 'document');
 });
+
+test('voice notes accept WebM audio with a valid container signature', () => {
+  const voiceNote = {
+    originalname: 'voice-note.webm',
+    mimetype: 'audio/webm',
+    buffer: Buffer.from('1a45dfa3', 'hex')
+  };
+  assert.equal(getMediaType(voiceNote), 'audio');
+  assert.equal(validateMediaFile(voiceNote), 'audio');
+  assert.throws(
+    () => validateMediaFile({ ...voiceNote, buffer: Buffer.from('not audio') }),
+    /contents do not match/
+  );
+});

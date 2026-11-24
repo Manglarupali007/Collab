@@ -128,15 +128,26 @@ const directMediaUpload = multer({
   }
 });
 
-const serializeDirectMessage = (message, conversationId) => {
+const serializeDirectMessage = (message, conversationId, readReceipts = []) => {
   const media = message.media;
   const fileId = media?.fileId ? String(media.fileId) : null;
+  const reactions = message.reactions instanceof Map
+    ? Object.fromEntries(message.reactions)
+    : (message.reactions || {});
+  const deleted = Boolean(message.deletedAt);
+  const readBy = (readReceipts || [])
+    .filter(receipt => (
+      String(receipt.user) !== String(message.sender)
+      && new Date(receipt.lastReadAt) >= new Date(message.createdAt)
+    ))
+    .map(receipt => String(receipt.user));
   return {
     id: String(message._id),
     senderId: String(message.sender),
     username: message.username,
-    text: message.text || '',
-    media: fileId ? {
+    text: deleted ? 'This message was deleted' : (message.text || ''),
+    reactions,
+    media: fileId && !deleted ? {
       fileId,
       fileName: media.fileName,
       mimeType: media.mimeType,
@@ -144,8 +155,27 @@ const serializeDirectMessage = (message, conversationId) => {
       size: media.size,
       url: `/api/conversations/${conversationId}/media/${fileId}`
     } : null,
+    replyTo: message.replyTo?.messageId ? {
+      messageId: String(message.replyTo.messageId),
+      username: message.replyTo.username || '',
+      text: message.replyTo.text || ''
+    } : null,
+    editedAt: message.editedAt || null,
+    deletedAt: message.deletedAt || null,
+    readBy,
     createdAt: message.createdAt
   };
+};
+
+const serializePinnedMessages = async (conversation, readReceipts = []) => {
+  const pinnedMessages = await DirectMessage.find({
+    _id: { $in: conversation.pinnedMessages || [] },
+    conversation: conversation._id,
+    deletedAt: { $exists: false }
+  }).sort({ createdAt: -1 }).lean();
+  return pinnedMessages.map(message => (
+    serializeDirectMessage(message, String(conversation._id), readReceipts)
+  ));
 };
 
 const publishDirectMessage = (conversation, storedMessage) => {
@@ -162,6 +192,32 @@ const publishDirectMessage = (conversation, storedMessage) => {
     });
   });
   return message;
+};
+
+const refreshConversationPreview = async conversation => {
+  const latest = await DirectMessage.findOne({
+    conversation: conversation._id,
+    deletedAt: { $exists: false }
+  }).sort({ createdAt: -1 }).lean();
+  conversation.lastMessage = latest ? {
+    sender: latest.sender,
+    username: latest.username,
+    text: latest.text || mediaPreviewText({
+      mediaType: latest.media?.mediaType,
+      fileName: latest.media?.fileName
+    }),
+    createdAt: latest.createdAt
+  } : undefined;
+  await conversation.save();
+
+  const conversationId = String(conversation._id);
+  conversation.participants.forEach(participantId => {
+    io.to(userSocketRoom(participantId)).emit('conversation-preview-updated', {
+      conversationId,
+      lastMessage: conversation.lastMessage || null,
+      updatedAt: conversation.updatedAt
+    });
+  });
 };
 
 const findAuthorizedConversation = async (req, res, next) => {
@@ -421,16 +477,30 @@ app.get('/api/conversations', authenticateToken, async (req, res) => {
       .sort({ updatedAt: -1 })
       .lean();
 
-    res.json({
-      conversations: conversations.map(conversation => ({
+    const userId = String(req.user.userId);
+    const serialized = await Promise.all(conversations.map(async conversation => {
+      const readReceipt = (conversation.readReceipts || []).find(
+        receipt => String(receipt.user) === userId
+      );
+      const unreadCount = await DirectMessage.countDocuments({
+        conversation: conversation._id,
+        sender: { $ne: req.user.userId },
+        deletedAt: { $exists: false },
+        createdAt: { $gt: readReceipt?.lastReadAt || new Date(0) }
+      });
+
+      return {
         id: conversation._id,
         updatedAt: conversation.updatedAt,
         otherUser: conversation.participants.find(
-          participant => String(participant._id) !== String(req.user.userId)
+          participant => String(participant._id) !== userId
         ),
-        lastMessage: conversation.lastMessage || null
-      }))
-    });
+        lastMessage: conversation.lastMessage || null,
+        unreadCount,
+        pinnedMessageIds: (conversation.pinnedMessages || []).map(String)
+      };
+    }));
+    res.json({ conversations: serialized });
   } catch (error) {
     console.error('❌ Conversation list error:', error);
     res.status(500).json({ error: 'Unable to load conversations' });
@@ -496,6 +566,26 @@ app.post(
       return res.status(400).json({ error: 'Captions must be 4000 characters or fewer' });
     }
 
+    let replyTo;
+    if (req.body.replyToId) {
+      if (!mongoose.Types.ObjectId.isValid(req.body.replyToId)) {
+        return res.status(400).json({ error: 'Invalid replied-to message' });
+      }
+      const repliedMessage = await DirectMessage.findOne({
+        _id: req.body.replyToId,
+        conversation: req.directConversation._id,
+        deletedAt: { $exists: false }
+      }).select('_id username text media');
+      if (!repliedMessage) {
+        return res.status(404).json({ error: 'Replied-to message not found' });
+      }
+      replyTo = {
+        messageId: repliedMessage._id,
+        username: repliedMessage.username,
+        text: repliedMessage.text || (repliedMessage.media ? 'Attachment' : '')
+      };
+    }
+
     let mediaType;
     try {
       mediaType = validateMediaFile(req.file);
@@ -531,6 +621,7 @@ app.post(
         sender: req.user.userId,
         username: req.user.username,
         text: caption,
+        replyTo,
         media: {
           fileId,
           fileName,
@@ -574,7 +665,8 @@ app.get(
       const fileId = new mongoose.Types.ObjectId(req.params.fileId);
       const message = await DirectMessage.findOne({
         conversation: req.directConversation._id,
-        'media.fileId': fileId
+        'media.fileId': fileId,
+        deletedAt: { $exists: false }
       }).select('media').lean();
       if (!message?.media) {
         return res.status(404).json({ error: 'Attachment not found' });
@@ -619,20 +711,35 @@ app.get('/api/conversations/:conversationId/messages', authenticateToken, async 
     const conversation = await DirectConversation.findOne({
       _id: req.params.conversationId,
       participants: req.user.userId
-    }).select('_id');
+    }).select('_id readReceipts pinnedMessages');
 
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    const messages = await DirectMessage.find({
+    const searchTerm = String(req.query.q || '').trim().slice(0, 100);
+    const messageQuery = {
       conversation: conversation._id
-    }).sort({ createdAt: -1 }).limit(100).lean();
+    };
+    if (searchTerm) {
+      const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      messageQuery.deletedAt = { $exists: false };
+      messageQuery.$or = [
+        { text: { $regex: escapedTerm, $options: 'i' } },
+        { 'media.fileName': { $regex: escapedTerm, $options: 'i' } }
+      ];
+    }
+
+    const messages = await DirectMessage.find(messageQuery)
+      .sort({ createdAt: -1 }).limit(100).lean();
+    const readReceipts = conversation.readReceipts || [];
+    const pinnedMessages = await serializePinnedMessages(conversation, readReceipts);
 
     res.json({
       messages: messages.reverse().map(message => (
-        serializeDirectMessage(message, String(conversation._id))
-      ))
+        serializeDirectMessage(message, String(conversation._id), readReceipts)
+      )),
+      pinnedMessages
     });
   } catch (error) {
     console.error('❌ Conversation history error:', error);
@@ -661,7 +768,7 @@ io.on('connection', (socket) => {
       const conversation = await DirectConversation.findOne({
         _id: conversationId,
         participants: socket.userId
-      }).select('_id');
+      }).select('_id readReceipts pinnedMessages');
 
       if (!conversation) {
         return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
@@ -675,8 +782,9 @@ io.on('connection', (socket) => {
       }).sort({ createdAt: -1 }).limit(100).lean();
       acknowledgeSocketEvent(acknowledge, {
         messages: messages.reverse().map(message => (
-          serializeDirectMessage(message, conversationIdString)
-        ))
+          serializeDirectMessage(message, conversationIdString, conversation.readReceipts)
+        )),
+        pinnedMessages: await serializePinnedMessages(conversation, conversation.readReceipts)
       });
     } catch (error) {
       console.error('❌ Join direct conversation error:', error);
@@ -726,9 +834,254 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('mark-direct-read', async (payload, acknowledge) => {
+    try {
+      const conversationId = String(payload?.conversationId || '');
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Invalid conversation ID' });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      });
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      const readAt = new Date();
+      const receipt = conversation.readReceipts.find(
+        item => String(item.user) === String(socket.userId)
+      );
+      if (receipt) receipt.lastReadAt = readAt;
+      else conversation.readReceipts.push({ user: socket.userId, lastReadAt: readAt });
+      await conversation.save();
+
+      const result = {
+        conversationId,
+        readerId: String(socket.userId),
+        readAt
+      };
+      io.to(directConversationRoom(conversationId)).emit('direct-read-receipt', result);
+      acknowledgeSocketEvent(acknowledge, { readAt });
+    } catch (error) {
+      console.error('❌ Mark direct messages read error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to mark messages as read' });
+    }
+  });
+
+  socket.on('toggle-direct-pin', async (payload, acknowledge) => {
+    try {
+      const { conversationId, messageId } = payload && typeof payload === 'object'
+        ? payload
+        : {};
+      if (!mongoose.Types.ObjectId.isValid(conversationId)
+        || !mongoose.Types.ObjectId.isValid(messageId)) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Invalid message or conversation' });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      });
+      const message = await DirectMessage.findOne({
+        _id: messageId,
+        conversation: conversationId,
+        deletedAt: { $exists: false }
+      });
+      if (!conversation || !message) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Message not found' });
+      }
+
+      const pinnedIndex = conversation.pinnedMessages.findIndex(
+        id => String(id) === String(messageId)
+      );
+      if (pinnedIndex >= 0) conversation.pinnedMessages.splice(pinnedIndex, 1);
+      else conversation.pinnedMessages.push(message._id);
+      await conversation.save();
+
+      const pinnedMessages = await serializePinnedMessages(
+        conversation,
+        conversation.readReceipts
+      );
+      const result = { conversationId, pinnedMessages };
+      io.to(directConversationRoom(conversationId)).emit('direct-pins-updated', result);
+      acknowledgeSocketEvent(acknowledge, result);
+    } catch (error) {
+      console.error('❌ Toggle direct message pin error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to update pinned messages' });
+    }
+  });
+
+  socket.on('edit-direct-message', async (payload, acknowledge) => {
+    try {
+      const { conversationId, messageId, text } = payload && typeof payload === 'object'
+        ? payload
+        : {};
+      const cleanText = typeof text === 'string' ? text.trim() : '';
+      if (!mongoose.Types.ObjectId.isValid(conversationId)
+        || !mongoose.Types.ObjectId.isValid(messageId)
+        || !cleanText
+        || cleanText.length > 4000) {
+        return acknowledgeSocketEvent(acknowledge, {
+          error: 'Edited messages must contain 1 to 4000 characters'
+        });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      });
+      const message = await DirectMessage.findOne({
+        _id: messageId,
+        conversation: conversationId,
+        sender: socket.userId,
+        deletedAt: { $exists: false }
+      });
+      if (!conversation || !message) {
+        return acknowledgeSocketEvent(acknowledge, {
+          error: 'Message not found or you cannot edit it'
+        });
+      }
+
+      message.text = cleanText;
+      message.editedAt = new Date();
+      await message.save();
+      await refreshConversationPreview(conversation);
+      const serialized = serializeDirectMessage(
+        message,
+        conversationId,
+        conversation.readReceipts
+      );
+      io.to(directConversationRoom(conversationId)).emit('direct-message-updated', {
+        conversationId,
+        message: serialized
+      });
+      acknowledgeSocketEvent(acknowledge, { message: serialized });
+    } catch (error) {
+      console.error('❌ Edit direct message error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to edit message' });
+    }
+  });
+
+  socket.on('delete-direct-message', async (payload, acknowledge) => {
+    try {
+      const { conversationId, messageId } = payload && typeof payload === 'object'
+        ? payload
+        : {};
+      if (!mongoose.Types.ObjectId.isValid(conversationId)
+        || !mongoose.Types.ObjectId.isValid(messageId)) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Invalid message or conversation' });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      });
+      const message = await DirectMessage.findOne({
+        _id: messageId,
+        conversation: conversationId,
+        sender: socket.userId,
+        deletedAt: { $exists: false }
+      });
+      if (!conversation || !message) {
+        return acknowledgeSocketEvent(acknowledge, {
+          error: 'Message not found or you cannot delete it'
+        });
+      }
+
+      const mediaFileId = message.media?.fileId;
+      message.text = '';
+      message.media = undefined;
+      message.reactions = {};
+      message.deletedAt = new Date();
+      await message.save();
+      if (mediaFileId) {
+        const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+          bucketName: 'directMedia'
+        });
+        await bucket.delete(mediaFileId).catch(cleanupError => {
+          console.error('❌ Deleted attachment cleanup error:', cleanupError);
+        });
+      }
+
+      conversation.pinnedMessages = conversation.pinnedMessages.filter(
+        id => String(id) !== String(messageId)
+      );
+      await conversation.save();
+      await refreshConversationPreview(conversation);
+      const serialized = serializeDirectMessage(
+        message,
+        conversationId,
+        conversation.readReceipts
+      );
+      io.to(directConversationRoom(conversationId)).emit('direct-message-updated', {
+        conversationId,
+        message: serialized
+      });
+      io.to(directConversationRoom(conversationId)).emit('direct-pins-updated', {
+        conversationId,
+        pinnedMessages: await serializePinnedMessages(conversation, conversation.readReceipts)
+      });
+      acknowledgeSocketEvent(acknowledge, { message: serialized });
+    } catch (error) {
+      console.error('❌ Delete direct message error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to delete message' });
+    }
+  });
+
+  socket.on('react-to-direct-message', async (payload, acknowledge) => {
+    try {
+      const { conversationId, messageId, emoji } = payload && typeof payload === 'object'
+        ? payload
+        : {};
+      const allowedEmojis = ['😀', '😂', '😍', '👍', '🙏', '🔥', '🎉', '❤️'];
+
+      if (!mongoose.Types.ObjectId.isValid(conversationId)
+        || !mongoose.Types.ObjectId.isValid(messageId)
+        || !allowedEmojis.includes(emoji)) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Invalid reaction' });
+      }
+
+      const conversation = await DirectConversation.findOne({
+        _id: conversationId,
+        participants: socket.userId
+      });
+      if (!conversation) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
+      }
+
+      const message = await DirectMessage.findOne({
+        _id: messageId,
+        conversation: conversation._id
+      });
+      if (!message) {
+        return acknowledgeSocketEvent(acknowledge, { error: 'Message not found' });
+      }
+
+      const reactions = message.reactions instanceof Map
+        ? message.reactions
+        : new Map(Object.entries(message.reactions || {}));
+      reactions.set(emoji, (reactions.get(emoji) || 0) + 1);
+      message.reactions = reactions;
+      await message.save();
+
+      const serializedReactions = Object.fromEntries(reactions);
+      io.to(directConversationRoom(conversationId)).emit('direct-reaction', {
+        conversationId,
+        messageId,
+        reactions: serializedReactions
+      });
+      acknowledgeSocketEvent(acknowledge, { reactions: serializedReactions });
+    } catch (error) {
+      console.error('❌ Direct reaction error:', error);
+      acknowledgeSocketEvent(acknowledge, { error: 'Unable to add reaction' });
+    }
+  });
+
   socket.on('send-direct-message', async (payload, acknowledge) => {
     try {
-      const { conversationId, text } = payload && typeof payload === 'object'
+      const { conversationId, text, replyToId } = payload && typeof payload === 'object'
         ? payload
         : {};
       const cleanText = typeof text === 'string' ? text.trim() : '';
@@ -749,11 +1102,32 @@ io.on('connection', (socket) => {
         return acknowledgeSocketEvent(acknowledge, { error: 'Conversation not found' });
       }
 
+      let replyTo;
+      if (replyToId) {
+        if (!mongoose.Types.ObjectId.isValid(replyToId)) {
+          return acknowledgeSocketEvent(acknowledge, { error: 'Invalid replied-to message' });
+        }
+        const repliedMessage = await DirectMessage.findOne({
+          _id: replyToId,
+          conversation: conversation._id,
+          deletedAt: { $exists: false }
+        }).select('_id username text media');
+        if (!repliedMessage) {
+          return acknowledgeSocketEvent(acknowledge, { error: 'Replied-to message not found' });
+        }
+        replyTo = {
+          messageId: repliedMessage._id,
+          username: repliedMessage.username,
+          text: repliedMessage.text || (repliedMessage.media ? 'Attachment' : '')
+        };
+      }
+
       const storedMessage = await DirectMessage.create({
         conversation: conversation._id,
         sender: socket.userId,
         username: socket.username,
-        text: cleanText
+        text: cleanText,
+        replyTo
       });
       conversation.lastMessage = {
         sender: socket.userId,

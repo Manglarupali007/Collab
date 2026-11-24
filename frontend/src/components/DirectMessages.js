@@ -61,6 +61,9 @@ function MessageMedia({ conversationId, media, token }) {
       </video>
     );
   }
+  if (media.mediaType === 'audio') {
+    return <audio className="dm-attachment-audio" src={objectUrl} controls preload="metadata" />;
+  }
   return (
     <a className="dm-attachment-document" href={objectUrl} download={media.fileName}>
       <span className="dm-document-icon" aria-hidden="true">▤</span>
@@ -100,6 +103,12 @@ function DirectMessages() {
   const [loadingPeople, setLoadingPeople] = useState(false);
   const [sending, setSending] = useState(false);
   const [showGame, setShowGame] = useState(false);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null);
+  const [replyTarget, setReplyTarget] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [pinnedMessages, setPinnedMessages] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState('');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const socketRef = useRef(null);
@@ -107,6 +116,9 @@ function DirectMessages() {
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingStreamRef = useRef(null);
+  const recordingChunksRef = useRef([]);
 
   activeConversationRef.current = activeConversation;
 
@@ -150,6 +162,22 @@ function DirectMessages() {
 
       if (activeConversationRef.current?.id === conversationId) {
         setMessages(previous => mergeMessages(previous, [message]));
+        setConversations(previous => previous.map(conversation => (
+          conversation.id === conversationId
+            ? { ...conversation, unreadCount: 0 }
+            : conversation
+        )));
+        socket.emit('mark-direct-read', { conversationId }, response => {
+          if (response?.error) {
+            setError(response.error);
+            return;
+          }
+          setConversations(previous => previous.map(conversation => (
+            conversation.id === conversationId
+              ? { ...conversation, unreadCount: 0 }
+              : conversation
+          )));
+        });
       }
     };
 
@@ -176,6 +204,44 @@ function DirectMessages() {
       }
     };
 
+    const handleDirectReaction = ({ conversationId, messageId, reactions }) => {
+      if (activeConversationRef.current?.id === conversationId) {
+        setMessages(previous => previous.map(message => (
+          message.id === messageId ? { ...message, reactions } : message
+        )));
+      }
+      setReactionPickerMessageId(null);
+    };
+
+    const handleDirectMessageUpdated = ({ conversationId, message }) => {
+      if (activeConversationRef.current?.id === conversationId) {
+        setMessages(previous => mergeMessages(previous, [message]));
+      }
+    };
+
+    const handleConversationPreviewUpdated = ({ conversationId, lastMessage, updatedAt }) => {
+      setConversations(previous => previous.map(conversation => (
+        conversation.id === conversationId
+          ? { ...conversation, lastMessage, updatedAt }
+          : conversation
+      )));
+    };
+
+    const handleDirectReadReceipt = ({ conversationId, readerId, readAt }) => {
+      if (activeConversationRef.current?.id !== conversationId) return;
+      setMessages(previous => previous.map(message => (
+        message.senderId !== readerId && new Date(message.createdAt) <= new Date(readAt)
+          ? { ...message, readBy: Array.from(new Set([...(message.readBy || []), readerId])) }
+          : message
+      )));
+    };
+
+    const handleDirectPinsUpdated = ({ conversationId, pinnedMessages: updatedPins }) => {
+      if (activeConversationRef.current?.id === conversationId) {
+        setPinnedMessages(updatedPins || []);
+      }
+    };
+
     const handleConnect = () => {
       setError('');
       const conversationId = activeConversationRef.current?.id;
@@ -186,6 +252,18 @@ function DirectMessages() {
             return;
           }
           setMessages(previous => mergeMessages(previous, response?.messages || []));
+          setPinnedMessages(response?.pinnedMessages || []);
+          socket.emit('mark-direct-read', { conversationId }, readResponse => {
+            if (readResponse?.error) {
+              setError(readResponse.error);
+              return;
+            }
+            setConversations(previous => previous.map(conversation => (
+              conversation.id === conversationId
+                ? { ...conversation, unreadCount: 0 }
+                : conversation
+            )));
+          });
         });
       }
     };
@@ -194,6 +272,11 @@ function DirectMessages() {
     socket.on('inbox-message', handleInboxMessage);
     socket.on('direct-typing', handleTyping);
     socket.on('direct-stop-typing', handleStopTyping);
+    socket.on('direct-reaction', handleDirectReaction);
+    socket.on('direct-message-updated', handleDirectMessageUpdated);
+    socket.on('conversation-preview-updated', handleConversationPreviewUpdated);
+    socket.on('direct-read-receipt', handleDirectReadReceipt);
+    socket.on('direct-pins-updated', handleDirectPinsUpdated);
     socket.on('connect', handleConnect);
     socket.on('connect_error', () => {
       setError('Could not connect to chat. Check that the server is running.');
@@ -219,6 +302,11 @@ function DirectMessages() {
     return () => {
       mounted = false;
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.onstop = null;
+        mediaRecorderRef.current.stop();
+      }
+      recordingStreamRef.current?.getTracks().forEach(track => track.stop());
       socket.disconnect();
       socketRef.current = null;
     };
@@ -273,6 +361,7 @@ function DirectMessages() {
     ).then(response => {
       if (!cancelled) {
         setMessages(previous => mergeMessages(previous, response.data.messages));
+        setPinnedMessages(response.data.pinnedMessages || []);
       }
     }).catch(loadError => {
       if (!cancelled) {
@@ -289,6 +378,18 @@ function DirectMessages() {
           return;
         }
         setMessages(previous => mergeMessages(previous, response?.messages || []));
+        setPinnedMessages(response?.pinnedMessages || []);
+        socket.emit('mark-direct-read', { conversationId }, readResponse => {
+          if (readResponse?.error) {
+            setError(readResponse.error);
+            return;
+          }
+          setConversations(previous => previous.map(conversation => (
+            conversation.id === conversationId
+              ? { ...conversation, unreadCount: 0 }
+              : conversation
+          )));
+        });
       });
     };
 
@@ -332,6 +433,11 @@ function DirectMessages() {
     setActiveConversation(conversation);
     setDraft('');
     setSelectedFile(null);
+    setReplyTarget(null);
+    setSearchTerm('');
+    setSearchResults(null);
+    setPinnedMessages([]);
+    setReactionPickerMessageId(null);
     setShowGame(false);
     setShowPeople(false);
     setSearch('');
@@ -344,9 +450,55 @@ function DirectMessages() {
     setTypingUser('');
     setDraft('');
     setSelectedFile(null);
+    setReplyTarget(null);
+    setSearchTerm('');
+    setSearchResults(null);
+    setPinnedMessages([]);
     setShowGame(false);
+    setReactionPickerMessageId(null);
     setMobileChatOpen(false);
     setError('');
+  };
+
+  const addDirectReaction = (messageId, emoji) => {
+    const socket = socketRef.current;
+    if (!activeConversation) return;
+    if (!socket?.connected) {
+      setError('Chat is offline. Reconnect before adding a reaction.');
+      return;
+    }
+
+    const message = messages.find(item => item.id === messageId);
+    const previousReactions = message?.reactions || {};
+    const updatedReactions = {
+      ...previousReactions,
+      [emoji]: (previousReactions[emoji] || 0) + 1
+    };
+    setMessages(previous => previous.map(item => (
+      item.id === messageId ? { ...item, reactions: updatedReactions } : item
+    )));
+    setReactionPickerMessageId(null);
+
+    socket.timeout(5000).emit('react-to-direct-message', {
+      conversationId: activeConversation.id,
+      messageId,
+      emoji
+    }, (timeoutError, response) => {
+      if (timeoutError || response?.error) {
+        setMessages(previous => previous.map(item => (
+          item.id === messageId ? { ...item, reactions: previousReactions } : item
+        )));
+        setError(response?.error || 'Reaction could not be sent. Check the chat connection.');
+        return;
+      }
+      if (response?.reactions) {
+        setMessages(previous => previous.map(message => (
+          message.id === messageId
+            ? { ...message, reactions: response.reactions }
+            : message
+        )));
+      }
+    });
   };
 
   const startConversation = async person => {
@@ -384,6 +536,7 @@ function DirectMessages() {
       const formData = new FormData();
       formData.append('media', selectedFile);
       formData.append('text', text);
+      if (replyTarget) formData.append('replyToId', replyTarget.id);
       try {
         const response = await axios.post(
           `${backendURL}/api/conversations/${activeConversation.id}/media`,
@@ -399,6 +552,7 @@ function DirectMessages() {
         );
         setDraft('');
         setSelectedFile(null);
+        setReplyTarget(null);
         setUploadProgress(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
         if (socket?.connected) {
@@ -426,7 +580,8 @@ function DirectMessages() {
 
     socket.emit('send-direct-message', {
       conversationId: activeConversation.id,
-      text
+      text,
+      replyToId: replyTarget?.id
     }, response => {
       setSending(false);
       if (response?.error) {
@@ -434,6 +589,7 @@ function DirectMessages() {
         return;
       }
       setDraft('');
+      setReplyTarget(null);
       socket.emit('stop-typing-direct', { conversationId: activeConversation.id });
       if (response?.message) {
         setMessages(previous => mergeMessages(previous, [response.message]));
@@ -461,6 +617,155 @@ function DirectMessages() {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
     navigate('/', { replace: true });
+  };
+
+  const searchMessages = async event => {
+    event.preventDefault();
+    const query = searchTerm.trim();
+    if (!activeConversation || !query) {
+      setSearchResults(null);
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `${backendURL}/api/conversations/${activeConversation.id}/messages`,
+        { ...authConfig(), params: { q: query } }
+      );
+      setSearchResults(response.data.messages || []);
+    } catch (searchError) {
+      setError(searchError.response?.data?.error || 'Unable to search this conversation.');
+    }
+  };
+
+  const openSearchResult = message => {
+    setMessages(previous => mergeMessages(previous, [message]));
+    setSearchResults(null);
+    setSearchTerm('');
+    setTimeout(() => {
+      document.getElementById(`dm-message-${message.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }, 50);
+  };
+
+  const togglePin = messageId => {
+    const socket = socketRef.current;
+    if (!socket?.connected || !activeConversation) {
+      setError('Chat is offline. Reconnect before updating pinned messages.');
+      return;
+    }
+    socket.timeout(5000).emit('toggle-direct-pin', {
+      conversationId: activeConversation.id,
+      messageId
+    }, (timeoutError, response) => {
+      if (timeoutError || response?.error) {
+        setError(response?.error || 'Unable to update pinned messages.');
+        return;
+      }
+      setPinnedMessages(response.pinnedMessages || []);
+    });
+  };
+
+  const editMessage = message => {
+    const editedText = window.prompt('Edit your message:', message.text);
+    if (editedText === null || editedText.trim() === message.text) return;
+    const socket = socketRef.current;
+    if (!socket?.connected || !activeConversation) {
+      setError('Chat is offline. Reconnect before editing messages.');
+      return;
+    }
+    socket.timeout(5000).emit('edit-direct-message', {
+      conversationId: activeConversation.id,
+      messageId: message.id,
+      text: editedText
+    }, (timeoutError, response) => {
+      if (timeoutError || response?.error) {
+        setError(response?.error || 'Unable to edit message.');
+        return;
+      }
+      if (response?.message) {
+        setMessages(previous => mergeMessages(previous, [response.message]));
+      }
+    });
+  };
+
+  const deleteMessage = messageId => {
+    if (!window.confirm('Delete this message? It will be replaced with a deleted-message notice.')) {
+      return;
+    }
+    const socket = socketRef.current;
+    if (!socket?.connected || !activeConversation) {
+      setError('Chat is offline. Reconnect before deleting messages.');
+      return;
+    }
+    socket.timeout(5000).emit('delete-direct-message', {
+      conversationId: activeConversation.id,
+      messageId
+    }, (timeoutError, response) => {
+      if (timeoutError || response?.error) {
+        setError(response?.error || 'Unable to delete message.');
+        return;
+      }
+      if (response?.message) {
+        setMessages(previous => mergeMessages(previous, [response.message]));
+      }
+    });
+  };
+
+  const startVoiceRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Voice recording is not supported by this browser.');
+      return;
+    }
+    if (!MediaRecorder.isTypeSupported('audio/webm')) {
+      setError('This browser cannot record the supported audio format.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      recordingChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = event => {
+        if (event.data.size) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        setError('Voice recording failed. Check microphone permissions and try again.');
+        setIsRecording(false);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+        setIsRecording(false);
+        const blob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
+        if (!blob.size) return;
+        if (blob.size > MAX_ATTACHMENT_SIZE) {
+          setError('Voice notes must be 20 MB or smaller.');
+          return;
+        }
+        setError('');
+        setSelectedFile(new File([blob], `voice-note-${Date.now()}.webm`, {
+          type: 'audio/webm'
+        }));
+      };
+      recorder.start();
+      setIsRecording(true);
+      setError('');
+    } catch (recordingError) {
+      setError(recordingError.name === 'NotAllowedError'
+        ? 'Microphone access was denied. Allow microphone access and try again.'
+        : 'Unable to start voice recording.');
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
   };
 
   return (
@@ -571,6 +876,11 @@ function DirectMessages() {
                   </span>
                   <span className="dm-conversation-meta">
                     <time>{formatTime(conversation.lastMessage?.createdAt || conversation.updatedAt)}</time>
+                    {conversation.unreadCount > 0 && (
+                      <span className="dm-unread-count" aria-label={`${conversation.unreadCount} unread messages`}>
+                        {conversation.unreadCount}
+                      </span>
+                    )}
                     {conversation.otherUser?.isOnline && <span className="dm-presence is-online" />}
                   </span>
                 </button>
@@ -621,6 +931,15 @@ function DirectMessages() {
                   <span aria-hidden="true">✕</span>
                   <span>Play game</span>
                 </button>
+                <button
+                  type="button"
+                  className="dm-chat-search-toggle"
+                  onClick={() => document.getElementById('dm-chat-search')?.focus()}
+                  aria-label="Search this conversation"
+                  title="Search messages"
+                >
+                  Search
+                </button>
                 <span className="dm-private-badge"><span>◆</span> PRIVATE</span>
                 <button
                   type="button"
@@ -634,16 +953,92 @@ function DirectMessages() {
                 </button>
               </header>
 
+              <form className="dm-search-form" onSubmit={searchMessages}>
+                <input
+                  id="dm-chat-search"
+                  value={searchTerm}
+                  onChange={event => {
+                    setSearchTerm(event.target.value);
+                    if (!event.target.value) setSearchResults(null);
+                  }}
+                  placeholder="Search messages and files…"
+                  aria-label="Search messages and shared files"
+                />
+                <button type="submit">Search</button>
+                {searchResults !== null && (
+                  <button
+                    type="button"
+                    className="dm-search-clear"
+                    onClick={() => {
+                      setSearchResults(null);
+                      setSearchTerm('');
+                    }}
+                    aria-label="Clear search results"
+                  >
+                    ×
+                  </button>
+                )}
+                {searchResults !== null && (
+                  <div className="dm-search-results">
+                    {searchResults.length ? searchResults.map(result => (
+                      <button
+                        type="button"
+                        key={result.id}
+                        onClick={() => openSearchResult(result)}
+                      >
+                        <strong>{result.username}</strong>
+                        <span>{result.media?.fileName || result.text}</span>
+                        <time>{formatTime(result.createdAt)}</time>
+                      </button>
+                    )) : <p>No matching messages or files.</p>}
+                  </div>
+                )}
+              </form>
+
+              {pinnedMessages.length > 0 && (
+                <div className="dm-pinned-list" aria-label="Pinned messages">
+                  <strong>PINNED</strong>
+                  {pinnedMessages.map(message => (
+                    <button
+                      type="button"
+                      key={message.id}
+                      onClick={() => openSearchResult(message)}
+                      title={`${message.username}: ${message.text || message.media?.fileName || 'Attachment'}`}
+                    >
+                      <span>{message.text || message.media?.fileName || 'Attachment'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="dm-message-list">
                 {messages.length ? messages.map(message => {
                   const isOwn = message.username === username;
+                  const isPinned = pinnedMessages.some(pin => pin.id === message.id);
                   return (
-                    <div className={`dm-message-row ${isOwn ? 'is-own' : ''}`} key={message.id}>
+                    <div
+                      className={`dm-message-row ${isOwn ? 'is-own' : ''}`}
+                      key={message.id}
+                      id={`dm-message-${message.id}`}
+                    >
                       {!isOwn && <span className="dm-avatar dm-message-avatar">{getInitials(message.username)}</span>}
                       <div className="dm-message-content">
                         {!isOwn && <span className="dm-message-author">{message.username}</span>}
-                        <div className={`dm-bubble ${message.media ? 'dm-bubble-with-media' : ''}`}>
-                          {message.media && (
+                        {message.replyTo && (
+                          <button
+                            type="button"
+                            className="dm-reply-preview"
+                            onClick={() => document.getElementById(`dm-message-${message.replyTo.messageId}`)?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'center'
+                            })}
+                          >
+                            <strong>{message.replyTo.username}</strong>
+                            <span>{message.replyTo.text}</span>
+                          </button>
+                        )}
+                        <div className={`dm-bubble ${message.media ? 'dm-bubble-with-media' : ''} ${message.deletedAt ? 'dm-bubble-deleted' : ''}`}>
+                          {!message.deletedAt && message.media && (
                             <MessageMedia
                               conversationId={activeConversation.id}
                               media={message.media}
@@ -656,7 +1051,67 @@ function DirectMessages() {
                             </span>
                           )}
                         </div>
-                        <time>{formatTime(message.createdAt)}</time>
+                        {!message.deletedAt && (
+                          <div className="dm-message-actions">
+                            <button type="button" onClick={() => setReplyTarget(message)}>Reply</button>
+                            <button type="button" onClick={() => togglePin(message.id)}>
+                              {isPinned ? 'Unpin' : 'Pin'}
+                            </button>
+                            {isOwn && message.text && (
+                              <button type="button" onClick={() => editMessage(message)}>Edit</button>
+                            )}
+                            {isOwn && (
+                              <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>
+                            )}
+                          </div>
+                        )}
+                        <div className="dm-reactions">
+                          {!message.deletedAt && Object.entries(message.reactions || {}).map(([emoji, count]) => (
+                            count > 0 && (
+                              <button
+                                type="button"
+                                key={emoji}
+                                className="dm-reaction-count"
+                                onClick={() => addDirectReaction(message.id, emoji)}
+                                aria-label={`React with ${emoji}`}
+                              >
+                                {emoji} {count}
+                              </button>
+                            )
+                          ))}
+                          {!message.deletedAt && <div className="dm-reaction-picker-wrap">
+                            <button
+                              type="button"
+                              className="dm-add-reaction"
+                              onClick={() => setReactionPickerMessageId(
+                                reactionPickerMessageId === message.id ? null : message.id
+                              )}
+                              aria-label="Add reaction"
+                              title="React"
+                            >
+                              ☺
+                            </button>
+                            {reactionPickerMessageId === message.id && (
+                              <div className="dm-reaction-picker">
+                                {['😀', '😂', '😍', '👍', '🙏', '🔥', '🎉', '❤️'].map(emoji => (
+                                  <button
+                                    type="button"
+                                    key={emoji}
+                                    onClick={() => addDirectReaction(message.id, emoji)}
+                                    aria-label={`React with ${emoji}`}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>}
+                        </div>
+                        <time>
+                          {formatTime(message.createdAt)}
+                          {message.editedAt && !message.deletedAt && ' · edited'}
+                          {isOwn && message.readBy?.includes(activeConversation.otherUser?._id) && ' · seen'}
+                        </time>
                       </div>
                     </div>
                   );
@@ -672,10 +1127,24 @@ function DirectMessages() {
               </div>
 
               <form className="dm-composer" onSubmit={sendMessage}>
+                {replyTarget && (
+                  <div className="dm-composer-context">
+                    <span><strong>Replying to {replyTarget.username}</strong>{replyTarget.text || replyTarget.media?.fileName || 'Attachment'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setReplyTarget(null)}
+                      aria-label="Cancel reply"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 {selectedFile && (
                   <div className="dm-selected-file">
                     <span aria-hidden="true">📎</span>
-                    <span className="dm-selected-file-name">{selectedFile.name}</span>
+                    <span className="dm-selected-file-name">
+                      {selectedFile.type === 'audio/webm' ? 'Voice note ready to send' : selectedFile.name}
+                    </span>
                     <span>{formatFileSize(selectedFile.size)}</span>
                     <button
                       type="button"
@@ -707,7 +1176,7 @@ function DirectMessages() {
                       ref={fileInputRef}
                       className="dm-file-input"
                       type="file"
-                      accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+                      accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,audio/webm,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
                       onChange={event => {
                         const file = event.target.files?.[0];
                         event.target.value = '';
@@ -730,10 +1199,21 @@ function DirectMessages() {
                     >
                       <span aria-hidden="true">＋</span> Attach
                     </button>
+                    <button
+                      className={`dm-voice-button ${isRecording ? 'is-recording' : ''}`}
+                      type="button"
+                      onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
+                      disabled={sending}
+                      aria-label={isRecording ? 'Stop voice note recording' : 'Record a voice note'}
+                    >
+                      {isRecording ? '■ Stop recording' : '● Voice note'}
+                    </button>
                     <span>Enter to send · Shift + Enter for a new line</span>
                   </div>
                   <button type="submit" disabled={(!draft.trim() && !selectedFile) || sending}>
-                    {sending ? (selectedFile ? `Uploading ${uploadProgress}%…` : 'Sending…') : 'Send'}
+                    {sending
+                      ? (selectedFile ? `Uploading ${uploadProgress}%…` : 'Sending…')
+                      : selectedFile?.type === 'audio/webm' ? 'Send voice note' : 'Send'}
                     <span aria-hidden="true">↑</span>
                   </button>
                 </div>
