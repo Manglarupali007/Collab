@@ -729,6 +729,10 @@
   padding: 8px;
 }
 
+.dm-bubble-audio {
+  min-width: 280px;
+}
+
 .dm-attachment-image,
 .dm-attachment-video {
   display: block;
@@ -743,8 +747,12 @@
 }
 
 .dm-attachment-audio {
-  width: min(300px, 100%);
-  height: 36px;
+  display: block;
+  flex: 0 0 auto;
+  width: 280px;
+  min-width: 220px;
+  max-width: calc(100vw - 140px);
+  height: 40px;
 }
 
 .dm-media-status {
@@ -1474,6 +1482,16 @@
 
   .dm-message-row {
     max-width: 90%;
+  }
+
+  .dm-bubble-audio {
+    min-width: min(260px, calc(100vw - 100px));
+  }
+
+  .dm-attachment-audio {
+    width: 260px;
+    min-width: min(220px, calc(100vw - 120px));
+    max-width: calc(100vw - 120px);
   }
 
   .dm-message-actions {

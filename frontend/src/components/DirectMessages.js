@@ -1037,7 +1037,7 @@ function DirectMessages() {
                             <span>{message.replyTo.text}</span>
                           </button>
                         )}
-                        <div className={`dm-bubble ${message.media ? 'dm-bubble-with-media' : ''} ${message.deletedAt ? 'dm-bubble-deleted' : ''}`}>
+                        <div className={`dm-bubble ${message.media ? 'dm-bubble-with-media' : ''} ${message.media?.mediaType === 'audio' ? 'dm-bubble-audio' : ''} ${message.deletedAt ? 'dm-bubble-deleted' : ''}`}>
                           {!message.deletedAt && message.media && (
                             <MessageMedia
                               conversationId={activeConversation.id}
